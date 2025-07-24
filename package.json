@@ -8,8 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "deploy": "vite build && gh-pages -d dist",
-    "predeploy": "npm run lint"
+    "deploy": "echo 'Deployment is now handled by GitHub Actions. Push to main branch to deploy.'"
   },
   "dependencies": {
     "@blueprintjs/core": "^6.1.0",
