@@ -65,14 +65,16 @@ export const TagsStep: FC<Props> = ({ towelCount, onComplete }) => {
                 <Checkbox
                   {...register(`${towelIdx}__${label}`)}
                   large
+                  labelElement={
+                    <span style={{
+                      color: grade === 'A' ? '#0F9960' : grade === 'B' ? '#D9822B' : '#DB3737',
+                      marginLeft: '8px',
+                      fontWeight: 'bold'
+                    }}>
+                      {label}
+                    </span>
+                  }
                 />
-                <span style={{
-                  color: grade === 'A' ? '#0F9960' : grade === 'B' ? '#D9822B' : '#DB3737',
-                  marginLeft: '8px',
-                  fontWeight: 'bold'
-                }}>
-                  {label}
-                </span>
               </div>
             ))}
           </div>

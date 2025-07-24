@@ -63,14 +63,16 @@ export const DifficultyStep: FC<Props> = ({ towelCount, onComplete }) => {
                 <Checkbox
                   {...register(`${towelIdx}__${label}`)}
                   large
+                  labelElement={
+                    <span style={{
+                      color: difficulty === 'Hard' ? '#8B5CF6' : '#137CBD',
+                      marginLeft: '8px',
+                      fontWeight: 'bold'
+                    }}>
+                      {label}
+                    </span>
+                  }
                 />
-                <span style={{
-                  color: difficulty === 'Hard' ? '#8B5CF6' : '#137CBD',
-                  marginLeft: '8px',
-                  fontWeight: 'bold'
-                }}>
-                  {label}
-                </span>
               </div>
             ))}
           </div>
