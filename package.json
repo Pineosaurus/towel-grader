@@ -31,5 +31,5 @@
     "typescript-eslint": "^8.35.1",
     "vite": "^7.0.6"
   },
-  "homepage": "https://pineosaurus.github.io/towel-grading"
+  "homepage": "https://pineosaurus.github.io/towel-grader"
 }
