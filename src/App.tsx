@@ -129,7 +129,11 @@ export default function App() {
                 </Tag>
                 {entry.grade !== 'C' && (
                   <Tag
-                    intent={entry.difficulty === 'Hard' ? 'danger' : 'primary'}
+                    intent={entry.difficulty === 'Hard' ? undefined : 'primary'}
+                    style={{
+                      backgroundColor: entry.difficulty === 'Hard' ? '#8B5CF6' : undefined,
+                      color: entry.difficulty === 'Hard' ? 'white' : undefined
+                    }}
                   >
                     {entry.difficulty}
                   </Tag>

@@ -65,8 +65,12 @@ export const InitialStep: FC<Props> = ({
 
       <Button
         disabled={towelCount === null || timeIdx === null}
-        intent="success"
         onClick={() => onProceed(validInitialCombination())}
+        style={{
+          backgroundColor: '#17A2B8',
+          color: 'white',
+          border: 'none'
+        }}
       >
         Continue
       </Button>

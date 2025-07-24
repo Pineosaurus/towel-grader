@@ -13,6 +13,7 @@ interface Props {
 
 export const DifficultyStep: FC<Props> = ({ towelCount, onComplete }) => {
   const { register, handleSubmit, watch } = useForm();
+  const watchedValues = watch();
 
   const tagEntries: { label: string; difficulty: Difficulty }[] = [
     ...DIFFICULTY_TAGS.Easy.map((l) => ({ label: l, difficulty: 'Easy' as Difficulty })),
@@ -31,6 +32,19 @@ export const DifficultyStep: FC<Props> = ({ towelCount, onComplete }) => {
       selections.push(arr);
     }
     onComplete(computeDifficulty(selections));
+  };
+
+  const isValid = () => {
+    if (!watchedValues) return false;
+    
+    for (let towelIdx = 0; towelIdx < towelCount; towelIdx++) {
+      const hasSelectedTag = Object.keys(watchedValues).some(key => {
+        const [towelIdxStr] = key.split('__');
+        return Number(towelIdxStr) === towelIdx && watchedValues[key];
+      });
+      if (!hasSelectedTag) return false;
+    }
+    return true;
   };
 
   return (
@@ -62,7 +76,16 @@ export const DifficultyStep: FC<Props> = ({ towelCount, onComplete }) => {
           </div>
         ))}
       </div>
-      <Button intent="success" type="submit" style={{ marginTop: '1rem' }}>
+      <Button 
+        type="submit" 
+        style={{ 
+          marginTop: '1rem',
+          backgroundColor: '#17A2B8',
+          color: 'white',
+          border: 'none'
+        }}
+        disabled={!isValid()}
+      >
         Continue
       </Button>
     </form>

@@ -28,8 +28,12 @@ export const ResultView: FC<Props> = ({ grade, difficulty, onReset }) => {
           <H2 style={{ marginTop: '2rem' }}>Difficulty</H2>
           <Tag
             large
-            intent={difficulty === 'Hard' ? 'danger' : 'primary'}
-            style={{ fontSize: '2rem' }}
+            intent={difficulty === 'Hard' ? undefined : 'primary'}
+            style={{ 
+              fontSize: '2rem',
+              backgroundColor: difficulty === 'Hard' ? '#8B5CF6' : undefined,
+              color: difficulty === 'Hard' ? 'white' : undefined
+            }}
           >
             {difficulty}
           </Tag>
@@ -37,7 +41,14 @@ export const ResultView: FC<Props> = ({ grade, difficulty, onReset }) => {
       )}
 
       <div style={{ marginTop: '2rem' }}>
-        <Button intent="warning" onClick={onReset}>
+        <Button 
+          onClick={onReset}
+          style={{
+            backgroundColor: '#17A2B8',
+            color: 'white',
+            border: 'none'
+          }}
+        >
           Reset
         </Button>
       </div>
