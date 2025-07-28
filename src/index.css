@@ -64,15 +64,15 @@ button:focus-visible {
   color: #FFFFFF !important;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+/* Force dark mode - override system preferences */
+:root {
+  color: rgba(255, 255, 255, 0.87) !important;
+  background-color: #242424 !important;
 }
+
+body {
+  color: rgba(255, 255, 255, 0.87) !important;
+  background-color: #242424 !important;
+}
+
+/* Remove light mode media query to force dark mode always */
