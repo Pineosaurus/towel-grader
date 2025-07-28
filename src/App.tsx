@@ -3,6 +3,10 @@ import {
   Button,
   Drawer,
   Tag,
+  Dialog,
+  FormGroup,
+  InputGroup,
+  HTMLSelect,
 } from '@blueprintjs/core';
 
 import type { Difficulty, Grade, HistoryEntry, GradingEntry, CountEntry } from './types';
@@ -79,6 +83,9 @@ export default function App() {
   }, []);
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [downloadFileName, setDownloadFileName] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
 
   const addGradingEntry = (grade: Grade, difficulty: Difficulty) => {
     const now = new Date();
@@ -187,6 +194,96 @@ export default function App() {
     setStep(1);
   };
 
+  // Download functionality
+  const getUniqueDates = (): string[] => {
+    const dates = new Set<string>();
+    history.forEach(entry => {
+      const dateStr = entry.timestamp.toLocaleDateString();
+      dates.add(dateStr);
+    });
+    return Array.from(dates).sort();
+  };
+
+  const filterEntriesByDate = (selectedDateStr: string): HistoryEntry[] => {
+    return history.filter(entry => 
+      entry.timestamp.toLocaleDateString() === selectedDateStr
+    );
+  };
+
+  const generateCSV = (entries: HistoryEntry[]): string => {
+    const headers = ['Type', 'Grade', 'Difficulty', 'Date', 'Time', 'Count'];
+    const csvRows = [headers.join(',')];
+
+    entries.forEach(entry => {
+      const date = entry.timestamp.toLocaleDateString();
+      const time = entry.timestamp.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        second: '2-digit'
+      });
+
+      if (entry.type === 'grading') {
+        csvRows.push([
+          'Grading',
+          entry.grade,
+          entry.difficulty,
+          date,
+          time,
+          ''
+        ].join(','));
+      } else {
+        csvRows.push([
+          'Count',
+          '',
+          '',
+          date,
+          time,
+          entry.count.toString()
+        ].join(','));
+      }
+    });
+
+    // Add total count for the day
+    const gradingCount = entries.filter(e => e.type === 'grading').length;
+    if (gradingCount > 0) {
+      csvRows.push(['Total', '', '', '', '', gradingCount.toString()].join(','));
+    }
+
+    return csvRows.join('\n');
+  };
+
+  const downloadCSV = () => {
+    if (!selectedDate || !downloadFileName.trim()) return;
+
+    const filteredEntries = filterEntriesByDate(selectedDate);
+    const csvContent = generateCSV(filteredEntries);
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${downloadFileName.trim()}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Reset and close modal
+    setDownloadFileName('');
+    setSelectedDate('');
+    setIsDownloadModalOpen(false);
+  };
+
+  const openDownloadModal = () => {
+    const dates = getUniqueDates();
+    if (dates.length > 0) {
+      setSelectedDate(dates[dates.length - 1]); // Default to most recent date
+    }
+    setIsDownloadModalOpen(true);
+  };
+
   return (
     <div className="bp6-dark" style={{ minHeight: '100vh', padding: '2rem' }}>
       {/* History button */}
@@ -230,7 +327,21 @@ export default function App() {
       )}
 
       <Drawer
-        title="History"
+        title={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <span>History</span>
+            <Button
+              icon="download"
+              minimal
+              small
+              onClick={openDownloadModal}
+              disabled={history.length === 0}
+              style={{ marginRight: '1rem' }}
+            >
+              Download History
+            </Button>
+          </div>
+        }
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
         position="right"
@@ -321,6 +432,74 @@ export default function App() {
           )}
         </div>
       </Drawer>
+
+      {/* Download Modal */}
+      <Dialog
+        isOpen={isDownloadModalOpen}
+        onClose={() => {
+          setIsDownloadModalOpen(false);
+          setDownloadFileName('');
+          setSelectedDate('');
+        }}
+        title="Download History"
+        style={{ width: '400px' }}
+      >
+        <div style={{ padding: '1rem' }}>
+          <FormGroup label="File Name" labelFor="filename-input">
+            <InputGroup
+              id="filename-input"
+              placeholder="Enter filename (without .csv extension)"
+              value={downloadFileName}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDownloadFileName(e.target.value)}
+            />
+          </FormGroup>
+
+          <FormGroup label="Select Date" labelFor="date-select" style={{ marginTop: '1rem' }}>
+            <HTMLSelect
+              id="date-select"
+              value={selectedDate}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedDate(e.target.value)}
+              fill
+            >
+              <option value="">Select a date...</option>
+              {getUniqueDates().map(date => (
+                <option key={date} value={date}>
+                  {date}
+                </option>
+              ))}
+            </HTMLSelect>
+          </FormGroup>
+
+          <div style={{ 
+            marginTop: '2rem', 
+            display: 'flex', 
+            justifyContent: 'flex-end', 
+            gap: '0.5rem' 
+          }}>
+            <Button
+              onClick={() => {
+                setIsDownloadModalOpen(false);
+                setDownloadFileName('');
+                setSelectedDate('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              intent="primary"
+              onClick={downloadCSV}
+              disabled={!downloadFileName.trim() || !selectedDate}
+              style={{
+                backgroundColor: '#17A2B8',
+                color: 'white',
+                border: 'none'
+              }}
+            >
+              Download
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
