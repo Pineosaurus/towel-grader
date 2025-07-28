@@ -54,6 +54,16 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* Custom styles for white icon buttons */
+.white-icon-button .bp5-icon svg {
+  fill: #FFFFFF !important;
+  color: #FFFFFF !important;
+}
+
+.white-icon-button .bp5-icon {
+  color: #FFFFFF !important;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;

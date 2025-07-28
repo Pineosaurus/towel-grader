@@ -26,6 +26,10 @@ export default function App() {
   const [resultGrade, setResultGrade] = useState<Grade>('C');
   const [resultDifficulty, setResultDifficulty] = useState<Difficulty>('Easy');
 
+  // Form state preservation
+  const [gradeSelections, setGradeSelections] = useState<Record<string, boolean>>({});
+  const [difficultySelections, setDifficultySelections] = useState<Record<string, boolean>>({});
+
   const [history, setHistory] = useState<{ grade: Grade; difficulty: Difficulty; timestamp: Date }[]>(
     []
   );
@@ -36,7 +40,8 @@ export default function App() {
     setStep(0);
     setTowelCount(null);
     setTimeIdx(null);
-    // nothing else to reset because we only track final results
+    setGradeSelections({});
+    setDifficultySelections({});
   };
 
   const gradeTagColors: Record<Grade, 'success' | 'warning' | 'danger'> = {
@@ -51,15 +56,18 @@ export default function App() {
     } else {
       // Invalid combinations get automatic C grade and skip to results
       setResultGrade('C');
+      setResultDifficulty('Easy');
       setHistory((h) => [...h, { grade: 'C', difficulty: 'Easy', timestamp: new Date() }]);
       setStep(3);
     }
   };
 
-  const handleTagsComplete = (grade: Grade) => {
+  const handleTagsComplete = (grade: Grade, selections: Record<string, boolean>) => {
     setResultGrade(grade);
+    setGradeSelections(selections);
     if (grade === 'C') {
       // C grade skips difficulty step and goes straight to results
+      setResultDifficulty('Easy');
       setHistory((h) => [...h, { grade, difficulty: 'Easy', timestamp: new Date() }]);
       setStep(3);
     } else {
@@ -68,10 +76,21 @@ export default function App() {
     }
   };
 
-  const handleDifficultyComplete = (difficulty: Difficulty) => {
+  const handleDifficultyComplete = (difficulty: Difficulty, selections: Record<string, boolean>) => {
     setResultDifficulty(difficulty);
+    setDifficultySelections(selections);
     setHistory((h) => [...h, { grade: resultGrade, difficulty, timestamp: new Date() }]);
     setStep(3);
+  };
+
+  const goBackFromTags = (selections: Record<string, boolean>) => {
+    setGradeSelections(selections);
+    setStep(0);
+  };
+
+  const goBackFromDifficulty = (selections: Record<string, boolean>) => {
+    setDifficultySelections(selections);
+    setStep(1);
   };
 
   return (
@@ -96,12 +115,16 @@ export default function App() {
         <TagsStep
           towelCount={towelCount ?? 1}
           onComplete={handleTagsComplete}
+          onBack={goBackFromTags}
+          initialSelections={gradeSelections}
         />
       )}
       {step === 2 && (
         <DifficultyStep
           towelCount={towelCount ?? 1}
           onComplete={handleDifficultyComplete}
+          onBack={goBackFromDifficulty}
+          initialSelections={difficultySelections}
         />
       )}
       {step === 3 && (

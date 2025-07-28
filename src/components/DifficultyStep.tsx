@@ -1,5 +1,6 @@
 import { Checkbox, Button, H3 } from '@blueprintjs/core';
 import { useForm } from 'react-hook-form';
+import { useEffect } from 'react';
 import type { FC } from 'react';
 
 import { DIFFICULTY_TAGS } from '../constants';
@@ -8,17 +9,60 @@ import type { Difficulty } from '../types';
 
 interface Props {
   towelCount: number;
-  onComplete: (difficulty: Difficulty) => void;
+  onComplete: (difficulty: Difficulty, selections: Record<string, boolean>) => void;
+  onBack: (selections: Record<string, boolean>) => void;
+  initialSelections: Record<string, boolean>;
 }
 
-export const DifficultyStep: FC<Props> = ({ towelCount, onComplete }) => {
-  const { register, handleSubmit, watch } = useForm();
+export const DifficultyStep: FC<Props> = ({ towelCount, onComplete, onBack, initialSelections }) => {
+  const { register, handleSubmit, watch, setValue } = useForm();
   const watchedValues = watch();
+
+  // Restore previous selections when component mounts
+  useEffect(() => {
+    Object.keys(initialSelections).forEach(key => {
+      setValue(key, initialSelections[key]);
+    });
+  }, [initialSelections, setValue]);
+
+  // Handle Easy difficulty exclusive selection
+  useEffect(() => {
+    if (!watchedValues) return;
+
+    Object.keys(watchedValues).forEach(key => {
+      if (watchedValues[key]) {
+        const [towelIdxStr, label] = key.split('__');
+        const towelIdx = Number(towelIdxStr);
+        
+        // If an Easy difficulty tag was just selected, deselect all Hard tags for this towel
+        if (DIFFICULTY_TAGS.Easy.includes(label)) {
+          Object.keys(watchedValues).forEach(otherKey => {
+            const [otherTowelIdxStr, otherLabel] = otherKey.split('__');
+            if (Number(otherTowelIdxStr) === towelIdx && otherKey !== key) {
+              if (DIFFICULTY_TAGS.Hard.includes(otherLabel)) {
+                setValue(otherKey, false);
+              }
+            }
+          });
+        }
+      }
+    });
+  }, [watchedValues, setValue]);
 
   const tagEntries: { label: string; difficulty: Difficulty }[] = [
     ...DIFFICULTY_TAGS.Easy.map((l) => ({ label: l, difficulty: 'Easy' as Difficulty })),
     ...DIFFICULTY_TAGS.Hard.map((l) => ({ label: l, difficulty: 'Hard' as Difficulty })),
   ];
+
+  const hasEasyDifficultyForTowel = (towelIdx: number): boolean => {
+    if (!watchedValues) return false;
+    return Object.keys(watchedValues).some(key => {
+      const [towelIdxStr, label] = key.split('__');
+      return Number(towelIdxStr) === towelIdx && 
+             DIFFICULTY_TAGS.Easy.includes(label) && 
+             watchedValues[key];
+    });
+  };
 
   const onSubmit = () => {
     const values = watch();
@@ -31,7 +75,7 @@ export const DifficultyStep: FC<Props> = ({ towelCount, onComplete }) => {
       });
       selections.push(arr);
     }
-    onComplete(computeDifficulty(selections));
+    onComplete(computeDifficulty(selections), values || {});
   };
 
   const isValid = () => {
@@ -49,32 +93,55 @@ export const DifficultyStep: FC<Props> = ({ towelCount, onComplete }) => {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
-      <H3>Select difficulty factors for each towel</H3>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
+        <Button 
+          icon="arrow-left" 
+          onClick={() => onBack(watchedValues || {})}
+          style={{ 
+            marginRight: '1rem',
+            backgroundColor: '#17A2B8',
+            color: '#FFFFFF',
+            border: 'none',
+            fill: '#FFFFFF'
+          }}
+          className="white-icon-button"
+        />
+        <H3 style={{ margin: 0 }}>Select difficulty factors for each towel</H3>
+      </div>
       <div style={{ display: 'flex', gap: '2rem' }}>
         {Array.from({ length: towelCount }).map((_, towelIdx) => (
           <div key={towelIdx}>
             <H3>Towel {towelIdx + 1}</H3>
-            {tagEntries.map(({ label, difficulty }) => (
-              <div key={label} style={{ 
-                marginBottom: '8px',
-                display: 'flex',
-                alignItems: 'center'
-              }}>
-                <Checkbox
-                  {...register(`${towelIdx}__${label}`)}
-                  large
-                  labelElement={
-                    <span style={{
-                      color: difficulty === 'Hard' ? '#8B5CF6' : '#137CBD',
-                      marginLeft: '8px',
-                      fontWeight: 'bold'
-                    }}>
-                      {label}
-                    </span>
-                  }
-                />
-              </div>
-            ))}
+            {tagEntries.map(({ label, difficulty }) => {
+              const hasEasyDifficulty = hasEasyDifficultyForTowel(towelIdx);
+              const isDisabled = hasEasyDifficulty && difficulty !== 'Easy';
+              
+              return (
+                <div key={label} style={{ 
+                  marginBottom: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  opacity: isDisabled ? 0.5 : 1
+                }}>
+                  <Checkbox
+                    {...register(`${towelIdx}__${label}`)}
+                    large
+                    disabled={isDisabled}
+                    labelElement={
+                      <span style={{
+                        color: isDisabled 
+                          ? '#888' 
+                          : (difficulty === 'Hard' ? '#8B5CF6' : '#137CBD'),
+                        marginLeft: '8px',
+                        fontWeight: 'bold'
+                      }}>
+                        {label}
+                      </span>
+                    }
+                  />
+                </div>
+              );
+            })}
           </div>
         ))}
       </div>
@@ -88,7 +155,7 @@ export const DifficultyStep: FC<Props> = ({ towelCount, onComplete }) => {
         }}
         disabled={!isValid()}
       >
-        Continue
+        Submit
       </Button>
     </form>
   );
