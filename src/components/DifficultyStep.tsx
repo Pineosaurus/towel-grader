@@ -1,6 +1,6 @@
 import { Checkbox, Button, H3 } from '@blueprintjs/core';
 import { useForm } from 'react-hook-form';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
 
 import { DIFFICULTY_TAGS } from '../constants';
@@ -17,6 +17,8 @@ interface Props {
 export const DifficultyStep: FC<Props> = ({ towelCount, onComplete, onBack, initialSelections }) => {
   const { register, handleSubmit, watch, setValue } = useForm();
   const watchedValues = watch();
+  const [focusedIndex, setFocusedIndex] = useState(1); // Start on first tag option
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Restore previous selections when component mounts
   useEffect(() => {
@@ -53,6 +55,108 @@ export const DifficultyStep: FC<Props> = ({ towelCount, onComplete, onBack, init
     ...DIFFICULTY_TAGS.Easy.map((l) => ({ label: l, difficulty: 'Easy' as Difficulty })),
     ...DIFFICULTY_TAGS.Hard.map((l) => ({ label: l, difficulty: 'Hard' as Difficulty })),
   ];
+
+  // Calculate total focusable items: back button (1) + checkboxes for each towel + submit button (1)
+  const totalCheckboxes = tagEntries.length * towelCount;
+  const totalItems = 1 + totalCheckboxes + 1; // back + checkboxes + submit
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    switch (e.code) {
+      case 'ArrowUp':
+      case 'KeyW':
+        e.preventDefault();
+        if (focusedIndex > 0) {
+          if (focusedIndex > 1 && focusedIndex <= totalCheckboxes) {
+            const currentTag = (focusedIndex - 1) % tagEntries.length;
+            if (currentTag > 0) {
+              setFocusedIndex(focusedIndex - 1);
+            }
+          }
+        }
+        break;
+      case 'ArrowDown':
+      case 'KeyS':
+        e.preventDefault();
+        if (focusedIndex === 0) {
+          setFocusedIndex(1);
+        } else if (focusedIndex < totalCheckboxes) {
+          const currentTag = (focusedIndex - 1) % tagEntries.length;
+          if (currentTag < tagEntries.length - 1) {
+            setFocusedIndex(focusedIndex + 1);
+          } else {
+            setFocusedIndex(totalItems - 1);
+          }
+        }
+        break;
+      case 'ArrowLeft':
+      case 'KeyA':
+        e.preventDefault();
+        if (focusedIndex > 1 && focusedIndex <= totalCheckboxes) {
+          const currentTowel = Math.floor((focusedIndex - 1) / tagEntries.length);
+          if (currentTowel > 0) {
+            setFocusedIndex(focusedIndex - tagEntries.length);
+          }
+        }
+        break;
+      case 'ArrowRight':
+      case 'KeyD':
+        e.preventDefault();
+        if (focusedIndex > 0 && focusedIndex <= totalCheckboxes) {
+          const currentTowel = Math.floor((focusedIndex - 1) / tagEntries.length);
+          if (currentTowel < towelCount - 1) {
+            setFocusedIndex(focusedIndex + tagEntries.length);
+          }
+        }
+        break;
+      case 'Space':
+        e.preventDefault();
+        if (focusedIndex === 0) {
+          onBack(watchedValues || {});
+        } else if (focusedIndex > 0 && focusedIndex <= totalCheckboxes) {
+          const towelIdx = Math.floor((focusedIndex - 1) / tagEntries.length);
+          const tagIdx = (focusedIndex - 1) % tagEntries.length;
+          const tag = tagEntries[tagIdx];
+          const key = `${towelIdx}__${tag.label}`;
+          const currentValue = watchedValues?.[key] || false;
+          setValue(key, !currentValue);
+        } else {
+          if (isValid()) {
+            onSubmit();
+          }
+        }
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (isValid()) {
+          onSubmit();
+        }
+        break;
+      case 'Tab':
+        e.preventDefault();
+        onBack(watchedValues || {});
+        break;
+    }
+  };
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('keydown', handleKeyDown);
+      container.tabIndex = 0;
+      container.focus();
+    }
+
+    return () => {
+      if (container) {
+        container.removeEventListener('keydown', handleKeyDown);
+      }
+    };
+  }, [focusedIndex, watchedValues, towelCount]);
+
+  const getFocusStyle = (index: number) => ({
+    outline: focusedIndex === index ? '2px solid #17A2B8' : '',
+    outlineOffset: '2px'
+  });
 
   const hasEasyDifficultyForTowel = (towelIdx: number): boolean => {
     if (!watchedValues) return false;
@@ -92,37 +196,48 @@ export const DifficultyStep: FC<Props> = ({ towelCount, onComplete, onBack, init
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
-        <Button 
-          icon="arrow-left" 
-          onClick={() => onBack(watchedValues || {})}
-          style={{ 
-            marginRight: '1rem',
-            backgroundColor: '#17A2B8',
-            color: '#FFFFFF',
-            border: 'none',
-            fill: '#FFFFFF'
-          }}
-          className="white-icon-button"
-        />
-        <H3 style={{ margin: 0 }}>Select difficulty factors for each towel</H3>
-      </div>
+    <div ref={containerRef} style={{ outline: 'none' }}>
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
+          <Button 
+            icon="arrow-left" 
+            onClick={() => {
+              setFocusedIndex(0);
+              onBack(watchedValues || {});
+            }}
+            style={{ 
+              marginRight: '1rem',
+              backgroundColor: '#17A2B8',
+              color: '#FFFFFF',
+              border: 'none',
+              fill: '#FFFFFF',
+              ...getFocusStyle(0)
+            }}
+            className="white-icon-button"
+          />
+          <H3 style={{ margin: 0 }}>Select difficulty factors for each towel</H3>
+        </div>
       <div style={{ display: 'flex', gap: '2rem' }}>
         {Array.from({ length: towelCount }).map((_, towelIdx) => (
           <div key={towelIdx}>
             <H3>Towel {towelIdx + 1}</H3>
-            {tagEntries.map(({ label, difficulty }) => {
+            {tagEntries.map(({ label, difficulty }, tagIdx) => {
               const hasEasyDifficulty = hasEasyDifficultyForTowel(towelIdx);
               const isDisabled = hasEasyDifficulty && difficulty !== 'Easy';
+              const itemIndex = 1 + (towelIdx * tagEntries.length) + tagIdx;
               
               return (
-                <div key={label} style={{ 
-                  marginBottom: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  opacity: isDisabled ? 0.5 : 1
-                }}>
+                <div 
+                  key={label} 
+                  style={{ 
+                    marginBottom: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    opacity: isDisabled ? 0.5 : 1,
+                    ...getFocusStyle(itemIndex)
+                  }}
+                  onClick={() => setFocusedIndex(itemIndex)}
+                >
                   <Checkbox
                     {...register(`${towelIdx}__${label}`)}
                     large
@@ -145,19 +260,22 @@ export const DifficultyStep: FC<Props> = ({ towelCount, onComplete, onBack, init
           </div>
         ))}
       </div>
-      <Button 
-        type="submit" 
-        style={{ 
-          marginTop: '1rem',
-          backgroundColor: '#17A2B8',
-          color: 'white',
-          border: 'none'
-        }}
-        disabled={!isValid()}
-      >
-        Submit
-      </Button>
-    </form>
+        <Button 
+          type="submit" 
+          onClick={() => setFocusedIndex(totalItems - 1)}
+          style={{ 
+            marginTop: '1rem',
+            backgroundColor: '#17A2B8',
+            color: 'white',
+            border: 'none',
+            ...getFocusStyle(totalItems - 1)
+          }}
+          disabled={!isValid()}
+        >
+          Submit
+        </Button>
+      </form>
+    </div>
   );
 };
 

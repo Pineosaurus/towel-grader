@@ -18,7 +18,7 @@ export default function App() {
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
 
   const [towelCount, setTowelCount] = useState<1 | 2 | 3 | null>(null);
-  const [timeIdx, setTimeIdx] = useState<0 | 1 | 2 | null>(null);
+  const [timeIdx, setTimeIdx] = useState<0 | 1 | 2 | 3 | null>(null);
 
   // we no longer keep the intermediate checkbox selections in component state – we
   // only need the final computed grade & difficulty, which are stored below.

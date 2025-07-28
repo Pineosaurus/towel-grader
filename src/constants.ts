@@ -6,6 +6,7 @@ export const TIME_OPTIONS = [
   '19 – 30s',
   '31s – 1m 1s', 
   '57s – 1m 32s',
+  '<19s or >1m 32s',
 ] as const;
 
 export const GRADE_TAGS: Record<Grade, string[]> = {

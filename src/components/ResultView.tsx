@@ -1,4 +1,5 @@
 import { Button, H2, Tag } from '@blueprintjs/core';
+import { useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
 
 import type { Difficulty, Grade } from '../types';
@@ -10,14 +11,47 @@ interface Props {
 }
 
 export const ResultView: FC<Props> = ({ grade, difficulty, onReset }) => {
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const gradeTagColors: Record<Grade, 'success' | 'warning' | 'danger'> = {
     A: 'success',
     B: 'warning',
     C: 'danger',
   };
 
+  const handleKeyDown = (e: KeyboardEvent) => {
+    switch (e.code) {
+      case 'Space':
+      case 'Enter':
+        e.preventDefault();
+        onReset();
+        break;
+    }
+  };
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('keydown', handleKeyDown);
+      container.tabIndex = 0;
+      container.focus();
+    }
+
+    return () => {
+      if (container) {
+        container.removeEventListener('keydown', handleKeyDown);
+      }
+    };
+  }, []);
+
+  const getFocusStyle = () => ({
+    outline: '2px solid #17A2B8',
+    outlineOffset: '2px'
+  });
+
   return (
-    <div style={{ textAlign: 'center', padding: '2rem', paddingBottom: '4rem' }}>
+    <div ref={containerRef} style={{ textAlign: 'center', padding: '2rem', paddingBottom: '4rem', outline: 'none' }}>
       <H2>Class</H2>
       <Tag 
         large 
@@ -58,7 +92,8 @@ export const ResultView: FC<Props> = ({ grade, difficulty, onReset }) => {
           style={{
             backgroundColor: '#17A2B8',
             color: 'white',
-            border: 'none'
+            border: 'none',
+            ...getFocusStyle()
           }}
         >
           Reset

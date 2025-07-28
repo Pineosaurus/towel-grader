@@ -1,6 +1,6 @@
 import { Checkbox, Button, H3 } from '@blueprintjs/core';
 import { useForm } from 'react-hook-form';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
 
 import { GRADE_TAGS } from '../constants';
@@ -17,6 +17,8 @@ interface Props {
 export const TagsStep: FC<Props> = ({ towelCount, onComplete, onBack, initialSelections }) => {
   const { register, handleSubmit, watch, setValue } = useForm();
   const watchedValues = watch();
+  const [focusedIndex, setFocusedIndex] = useState(1); // Start on first tag option
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Restore previous selections when component mounts
   useEffect(() => {
@@ -55,6 +57,121 @@ export const TagsStep: FC<Props> = ({ towelCount, onComplete, onBack, initialSel
     ...GRADE_TAGS.B.map((l) => ({ label: l, grade: 'B' as Grade })),
     ...GRADE_TAGS.C.map((l) => ({ label: l, grade: 'C' as Grade })),
   ];
+
+  // Calculate total focusable items: back button (1) + checkboxes for each towel + continue button (1)
+  const totalCheckboxes = gradeTagEntries.length * towelCount;
+  const totalItems = 1 + totalCheckboxes + 1; // back + checkboxes + continue
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    switch (e.code) {
+      case 'ArrowUp':
+      case 'KeyW':
+        e.preventDefault();
+        if (focusedIndex > 0) {
+          if (focusedIndex > 1 && focusedIndex <= totalCheckboxes) {
+            // Move up within checkboxes
+            const currentTowel = Math.floor((focusedIndex - 1) / gradeTagEntries.length);
+            const currentTag = (focusedIndex - 1) % gradeTagEntries.length;
+            if (currentTag > 0) {
+              setFocusedIndex(focusedIndex - 1);
+            }
+          }
+        }
+        break;
+      case 'ArrowDown':
+      case 'KeyS':
+        e.preventDefault();
+        if (focusedIndex === 0) {
+          // From back button to first checkbox
+          setFocusedIndex(1);
+        } else if (focusedIndex < totalCheckboxes) {
+          // Move down within checkboxes
+          const currentTowel = Math.floor((focusedIndex - 1) / gradeTagEntries.length);
+          const currentTag = (focusedIndex - 1) % gradeTagEntries.length;
+          if (currentTag < gradeTagEntries.length - 1) {
+            setFocusedIndex(focusedIndex + 1);
+          } else {
+            // Move to continue button
+            setFocusedIndex(totalItems - 1);
+          }
+        }
+        break;
+      case 'ArrowLeft':
+      case 'KeyA':
+        e.preventDefault();
+        if (focusedIndex > 1 && focusedIndex <= totalCheckboxes) {
+          // Move left between towels
+          const currentTowel = Math.floor((focusedIndex - 1) / gradeTagEntries.length);
+          const currentTag = (focusedIndex - 1) % gradeTagEntries.length;
+          if (currentTowel > 0) {
+            setFocusedIndex(focusedIndex - gradeTagEntries.length);
+          }
+        }
+        break;
+      case 'ArrowRight':
+      case 'KeyD':
+        e.preventDefault();
+        if (focusedIndex > 0 && focusedIndex <= totalCheckboxes) {
+          // Move right between towels
+          const currentTowel = Math.floor((focusedIndex - 1) / gradeTagEntries.length);
+          const currentTag = (focusedIndex - 1) % gradeTagEntries.length;
+          if (currentTowel < towelCount - 1) {
+            setFocusedIndex(focusedIndex + gradeTagEntries.length);
+          }
+        }
+        break;
+      case 'Space':
+        e.preventDefault();
+        if (focusedIndex === 0) {
+          // Back button
+          onBack(watchedValues || {});
+        } else if (focusedIndex > 0 && focusedIndex <= totalCheckboxes) {
+          // Toggle checkbox
+          const towelIdx = Math.floor((focusedIndex - 1) / gradeTagEntries.length);
+          const tagIdx = (focusedIndex - 1) % gradeTagEntries.length;
+          const tag = gradeTagEntries[tagIdx];
+          const key = `${towelIdx}__${tag.label}`;
+          const currentValue = watchedValues?.[key] || false;
+          setValue(key, !currentValue);
+        } else {
+          // Continue button
+          if (isValid()) {
+            onSubmit();
+          }
+        }
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (isValid()) {
+          onSubmit();
+        }
+        break;
+      case 'Tab':
+        e.preventDefault();
+        onBack(watchedValues || {});
+        break;
+    }
+  };
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('keydown', handleKeyDown);
+      container.tabIndex = 0;
+      container.focus();
+    }
+
+    return () => {
+      if (container) {
+        container.removeEventListener('keydown', handleKeyDown);
+      }
+    };
+  }, [focusedIndex, watchedValues, towelCount]);
+
+  const getFocusStyle = (index: number) => ({
+    outline: focusedIndex === index ? '2px solid #17A2B8' : '',
+    outlineOffset: '2px'
+  });
 
   const onSubmit = () => {
     const values = watch();
@@ -102,37 +219,48 @@ export const TagsStep: FC<Props> = ({ towelCount, onComplete, onBack, initialSel
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
-        <Button 
-          icon="arrow-left" 
-          onClick={() => onBack(watchedValues || {})}
-          style={{ 
-            marginRight: '1rem',
-            backgroundColor: '#17A2B8',
-            color: '#FFFFFF',
-            border: 'none',
-            fill: '#FFFFFF'
-          }}
-          className="white-icon-button"
-        />
-        <H3 style={{ margin: 0 }}>Select quality factors for each towel</H3>
-      </div>
+    <div ref={containerRef} style={{ outline: 'none' }}>
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1rem' }}>
+          <Button 
+            icon="arrow-left" 
+            onClick={() => {
+              setFocusedIndex(0);
+              onBack(watchedValues || {});
+            }}
+            style={{ 
+              marginRight: '1rem',
+              backgroundColor: '#17A2B8',
+              color: '#FFFFFF',
+              border: 'none',
+              fill: '#FFFFFF',
+              ...getFocusStyle(0)
+            }}
+            className="white-icon-button"
+          />
+          <H3 style={{ margin: 0 }}>Select quality factors for each towel</H3>
+        </div>
       <div style={{ display: 'flex', gap: '2rem' }}>
         {Array.from({ length: towelCount }).map((_, towelIdx) => (
           <div key={towelIdx}>
             <H3>Towel {towelIdx + 1}</H3>
-            {gradeTagEntries.map(({ label, grade }) => {
+            {gradeTagEntries.map(({ label, grade }, tagIdx) => {
               const hasAGrade = hasAGradeForTowel(towelIdx);
               const isDisabled = hasAGrade && grade !== 'A';
+              const itemIndex = 1 + (towelIdx * gradeTagEntries.length) + tagIdx;
               
               return (
-                <div key={label} style={{ 
-                  marginBottom: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  opacity: isDisabled ? 0.5 : 1
-                }}>
+                <div 
+                  key={label} 
+                  style={{ 
+                    marginBottom: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    opacity: isDisabled ? 0.5 : 1,
+                    ...getFocusStyle(itemIndex)
+                  }}
+                  onClick={() => setFocusedIndex(itemIndex)}
+                >
                   <Checkbox
                     {...register(`${towelIdx}__${label}`)}
                     large
@@ -155,19 +283,22 @@ export const TagsStep: FC<Props> = ({ towelCount, onComplete, onBack, initialSel
           </div>
         ))}
       </div>
-      <Button 
-        type="submit" 
-        style={{ 
-          marginTop: '1rem',
-          backgroundColor: '#17A2B8',
-          color: 'white',
-          border: 'none'
-        }}
-        disabled={!isValid()}
-      >
-        Continue
-      </Button>
-    </form>
+        <Button 
+          type="submit" 
+          onClick={() => setFocusedIndex(totalItems - 1)}
+          style={{ 
+            marginTop: '1rem',
+            backgroundColor: '#17A2B8',
+            color: 'white',
+            border: 'none',
+            ...getFocusStyle(totalItems - 1)
+          }}
+          disabled={!isValid()}
+        >
+          Continue
+        </Button>
+      </form>
+    </div>
   );
 };
 
