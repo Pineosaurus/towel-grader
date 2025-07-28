@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Button,
   Drawer,
@@ -34,6 +34,50 @@ export default function App() {
   const [firstEntryTime, setFirstEntryTime] = useState<Date | null>(null);
   const [lastIntervalCheck, setLastIntervalCheck] = useState<Date | null>(null);
 
+  // localStorage functions
+  const saveToLocalStorage = (history: HistoryEntry[], firstTime: Date | null, lastCheck: Date | null) => {
+    try {
+      localStorage.setItem('towel-grader-history', JSON.stringify({
+        history: history.map(entry => ({
+          ...entry,
+          timestamp: entry.timestamp.toISOString()
+        })),
+        firstEntryTime: firstTime?.toISOString() || null,
+        lastIntervalCheck: lastCheck?.toISOString() || null
+      }));
+    } catch (error) {
+      console.warn('Failed to save to localStorage:', error);
+    }
+  };
+
+  const loadFromLocalStorage = (): { history: HistoryEntry[], firstEntryTime: Date | null, lastIntervalCheck: Date | null } => {
+    try {
+      const saved = localStorage.getItem('towel-grader-history');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          history: parsed.history.map((entry: any) => ({
+            ...entry,
+            timestamp: new Date(entry.timestamp)
+          })),
+          firstEntryTime: parsed.firstEntryTime ? new Date(parsed.firstEntryTime) : null,
+          lastIntervalCheck: parsed.lastIntervalCheck ? new Date(parsed.lastIntervalCheck) : null
+        };
+      }
+    } catch (error) {
+      console.warn('Failed to load from localStorage:', error);
+    }
+    return { history: [], firstEntryTime: null, lastIntervalCheck: null };
+  };
+
+  // Load saved data on initialization
+  useEffect(() => {
+    const saved = loadFromLocalStorage();
+    setHistory(saved.history);
+    setFirstEntryTime(saved.firstEntryTime);
+    setLastIntervalCheck(saved.lastIntervalCheck);
+  }, []);
+
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const addGradingEntry = (grade: Grade, difficulty: Difficulty) => {
@@ -47,11 +91,18 @@ export default function App() {
         timestamp: now
       };
 
+      let updatedFirstTime = firstEntryTime;
+      let updatedLastCheck = lastIntervalCheck;
+
       // If this is the first entry, set the first entry time
       if (!firstEntryTime) {
+        updatedFirstTime = now;
+        updatedLastCheck = now;
         setFirstEntryTime(now);
         setLastIntervalCheck(now);
-        return [newGradingEntry];
+        const newHistory = [newGradingEntry];
+        saveToLocalStorage(newHistory, updatedFirstTime, updatedLastCheck);
+        return newHistory;
       }
 
       // Check if we need to add a 30-minute interval count entry
@@ -70,9 +121,11 @@ export default function App() {
         };
         
         updatedHistory.push(countEntry);
+        updatedLastCheck = now;
         setLastIntervalCheck(now);
       }
 
+      saveToLocalStorage(updatedHistory, updatedFirstTime, updatedLastCheck);
       return updatedHistory;
     });
   };
@@ -229,7 +282,7 @@ export default function App() {
                       color: '#888',
                       marginLeft: '1rem'
                     }}>
-                      {entry.timestamp.toLocaleTimeString([], { 
+                      {entry.timestamp.toLocaleDateString()} {entry.timestamp.toLocaleTimeString([], { 
                         hour: '2-digit', 
                         minute: '2-digit',
                         second: '2-digit'
@@ -255,7 +308,7 @@ export default function App() {
                       color: '#888',
                       marginLeft: '1rem'
                     }}>
-                      {entry.timestamp.toLocaleTimeString([], { 
+                      {entry.timestamp.toLocaleDateString()} {entry.timestamp.toLocaleTimeString([], { 
                         hour: '2-digit', 
                         minute: '2-digit',
                         second: '2-digit'
