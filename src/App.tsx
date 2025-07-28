@@ -26,7 +26,7 @@ export default function App() {
   const [resultGrade, setResultGrade] = useState<Grade>('C');
   const [resultDifficulty, setResultDifficulty] = useState<Difficulty>('Easy');
 
-  const [history, setHistory] = useState<{ grade: Grade; difficulty: Difficulty }[]>(
+  const [history, setHistory] = useState<{ grade: Grade; difficulty: Difficulty; timestamp: Date }[]>(
     []
   );
 
@@ -51,7 +51,7 @@ export default function App() {
     } else {
       // Invalid combinations get automatic C grade and skip to results
       setResultGrade('C');
-      setHistory((h) => [...h, { grade: 'C', difficulty: 'Easy' }]);
+      setHistory((h) => [...h, { grade: 'C', difficulty: 'Easy', timestamp: new Date() }]);
       setStep(3);
     }
   };
@@ -60,7 +60,7 @@ export default function App() {
     setResultGrade(grade);
     if (grade === 'C') {
       // C grade skips difficulty step and goes straight to results
-      setHistory((h) => [...h, { grade, difficulty: 'Easy' }]);
+      setHistory((h) => [...h, { grade, difficulty: 'Easy', timestamp: new Date() }]);
       setStep(3);
     } else {
       // A and B grades proceed to difficulty step
@@ -70,7 +70,7 @@ export default function App() {
 
   const handleDifficultyComplete = (difficulty: Difficulty) => {
     setResultDifficulty(difficulty);
-    setHistory((h) => [...h, { grade: resultGrade, difficulty }]);
+    setHistory((h) => [...h, { grade: resultGrade, difficulty, timestamp: new Date() }]);
     setStep(3);
   };
 
@@ -118,27 +118,58 @@ export default function App() {
         onClose={() => setIsHistoryOpen(false)}
         position="right"
       >
-        <div style={{ padding: '1rem' }}>
+        <div style={{ 
+          padding: '1rem',
+          maxHeight: 'calc(100vh - 120px)',
+          overflowY: 'auto'
+        }}>
+          <div style={{ 
+            marginBottom: '1rem', 
+            paddingBottom: '0.5rem', 
+            borderBottom: '1px solid #ccc',
+            fontSize: '14px',
+            color: '#666'
+          }}>
+            Total entries: {history.length}
+          </div>
           {history.length === 0 ? (
             <p>No history yet.</p>
           ) : (
             history.map((entry, idx) => (
-              <p key={idx} style={{ margin: '0.5rem 0' }}>
-                <Tag intent={gradeTagColors[entry.grade]} style={{ marginRight: '0.5rem' }}>
-                  {entry.grade}
-                </Tag>
-                {entry.grade !== 'C' && (
-                  <Tag
-                    intent={entry.difficulty === 'Hard' ? undefined : 'primary'}
-                    style={{
-                      backgroundColor: entry.difficulty === 'Hard' ? '#8B5CF6' : undefined,
-                      color: entry.difficulty === 'Hard' ? 'white' : undefined
-                    }}
-                  >
-                    {entry.difficulty}
+              <div key={idx} style={{ 
+                margin: '0.5rem 0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <div>
+                  <Tag intent={gradeTagColors[entry.grade]} style={{ marginRight: '0.5rem' }}>
+                    {entry.grade}
                   </Tag>
-                )}
-              </p>
+                  {entry.grade !== 'C' && (
+                    <Tag
+                      intent={entry.difficulty === 'Hard' ? undefined : 'primary'}
+                      style={{
+                        backgroundColor: entry.difficulty === 'Hard' ? '#8B5CF6' : undefined,
+                        color: entry.difficulty === 'Hard' ? 'white' : undefined
+                      }}
+                    >
+                      {entry.difficulty}
+                    </Tag>
+                  )}
+                </div>
+                <span style={{ 
+                  fontSize: '12px', 
+                  color: '#888',
+                  marginLeft: '1rem'
+                }}>
+                  {entry.timestamp.toLocaleTimeString([], { 
+                    hour: '2-digit', 
+                    minute: '2-digit',
+                    second: '2-digit'
+                  })}
+                </span>
+              </div>
             ))
           )}
         </div>
