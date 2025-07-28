@@ -86,6 +86,13 @@ export default function App() {
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [downloadFileName, setDownloadFileName] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
+  const [isClearHistoryModalOpen, setIsClearHistoryModalOpen] = useState(false);
+  const [isConfirmDeleteModalOpen, setIsConfirmDeleteModalOpen] = useState(false);
+  const [clearHistoryType, setClearHistoryType] = useState<'downloaded' | 'all' | null>(null);
+  const [lastDownloadedDate, setLastDownloadedDate] = useState<string>('');
+  const [downloadModalFocusIndex, setDownloadModalFocusIndex] = useState(0);
+  const [clearHistoryModalFocusIndex, setClearHistoryModalFocusIndex] = useState(2); // Default to "No"
+  const [confirmModalFocusIndex, setConfirmModalFocusIndex] = useState(0);
 
   const addGradingEntry = (grade: Grade, difficulty: Difficulty) => {
     const now = new Date();
@@ -205,12 +212,15 @@ export default function App() {
   };
 
   const filterEntriesByDate = (selectedDateStr: string): HistoryEntry[] => {
+    if (selectedDateStr === 'all') {
+      return history;
+    }
     return history.filter(entry => 
       entry.timestamp.toLocaleDateString() === selectedDateStr
     );
   };
 
-  const generateCSV = (entries: HistoryEntry[]): string => {
+  const generateCSV = (entries: HistoryEntry[], isAllDates: boolean = false): string => {
     const headers = ['Type', 'Grade', 'Difficulty', 'Date', 'Time', 'Count'];
     const csvRows = [headers.join(',')];
 
@@ -243,10 +253,11 @@ export default function App() {
       }
     });
 
-    // Add total count for the day
+    // Add total count
     const gradingCount = entries.filter(e => e.type === 'grading').length;
     if (gradingCount > 0) {
-      csvRows.push(['Total', '', '', '', '', gradingCount.toString()].join(','));
+      const totalLabel = isAllDates ? 'Total (All Dates)' : 'Total';
+      csvRows.push([totalLabel, '', '', '', '', gradingCount.toString()].join(','));
     }
 
     return csvRows.join('\n');
@@ -256,7 +267,8 @@ export default function App() {
     if (!selectedDate || !downloadFileName.trim()) return;
 
     const filteredEntries = filterEntriesByDate(selectedDate);
-    const csvContent = generateCSV(filteredEntries);
+    const isAllDates = selectedDate === 'all';
+    const csvContent = generateCSV(filteredEntries, isAllDates);
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -270,10 +282,17 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     
-    // Reset and close modal
+    // Store the downloaded date and show clear history modal
+    setLastDownloadedDate(selectedDate);
+    setIsDownloadModalOpen(false);
+    // Set focus to "No" button by default (last button)
+    const uniqueDates = getUniqueDates();
+    setClearHistoryModalFocusIndex(uniqueDates.length > 1 ? 2 : 1);
+    setIsClearHistoryModalOpen(true);
+    
+    // Reset download form
     setDownloadFileName('');
     setSelectedDate('');
-    setIsDownloadModalOpen(false);
   };
 
   const openDownloadModal = () => {
@@ -281,8 +300,187 @@ export default function App() {
     if (dates.length > 0) {
       setSelectedDate(dates[dates.length - 1]); // Default to most recent date
     }
+    setDownloadModalFocusIndex(0);
     setIsDownloadModalOpen(true);
   };
+
+  const clearDownloadedHistory = () => {
+    if (lastDownloadedDate === 'all') {
+      setHistory([]);
+      setFirstEntryTime(null);
+      setLastIntervalCheck(null);
+      saveToLocalStorage([], null, null);
+    } else {
+      const remainingEntries = history.filter(entry => 
+        entry.timestamp.toLocaleDateString() !== lastDownloadedDate
+      );
+      setHistory(remainingEntries);
+      
+      // Update timing if no entries remain
+      if (remainingEntries.length === 0) {
+        setFirstEntryTime(null);
+        setLastIntervalCheck(null);
+        saveToLocalStorage([], null, null);
+      } else {
+        // Find new first entry time if needed
+        const gradingEntries = remainingEntries.filter(e => e.type === 'grading');
+        if (gradingEntries.length > 0) {
+          const newFirstTime = gradingEntries[0].timestamp;
+          setFirstEntryTime(newFirstTime);
+          saveToLocalStorage(remainingEntries, newFirstTime, lastIntervalCheck);
+        }
+      }
+    }
+  };
+
+  const clearAllHistory = () => {
+    setHistory([]);
+    setFirstEntryTime(null);
+    setLastIntervalCheck(null);
+    saveToLocalStorage([], null, null);
+  };
+
+  const handleClearHistoryConfirm = (type: 'downloaded' | 'all') => {
+    setClearHistoryType(type);
+    setIsClearHistoryModalOpen(false);
+    setConfirmModalFocusIndex(0); // Default to "No"
+    setIsConfirmDeleteModalOpen(true);
+  };
+
+  const handleFinalDelete = () => {
+    if (clearHistoryType === 'downloaded') {
+      clearDownloadedHistory();
+    } else if (clearHistoryType === 'all') {
+      clearAllHistory();
+    }
+    
+    setIsConfirmDeleteModalOpen(false);
+    setClearHistoryType(null);
+    setLastDownloadedDate('');
+  };
+
+  // Keyboard handlers for modals
+  const handleDownloadModalKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const totalItems = 4; // filename, date, cancel, download
+    
+    switch (e.code) {
+      case 'ArrowUp':
+      case 'KeyW':
+        e.preventDefault();
+        setDownloadModalFocusIndex((prev) => Math.max(0, prev - 1));
+        break;
+      case 'ArrowDown':
+      case 'KeyS':
+        e.preventDefault();
+        setDownloadModalFocusIndex((prev) => Math.min(totalItems - 1, prev + 1));
+        break;
+      case 'Space':
+        e.preventDefault();
+        if (downloadModalFocusIndex === 2) {
+          // Cancel button
+          setIsDownloadModalOpen(false);
+          setDownloadFileName('');
+          setSelectedDate('');
+        } else if (downloadModalFocusIndex === 3) {
+          // Download button
+          if (downloadFileName.trim() && selectedDate) {
+            downloadCSV();
+          }
+        }
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (downloadFileName.trim() && selectedDate) {
+          downloadCSV();
+        }
+        break;
+      case 'Tab':
+        e.preventDefault();
+        setIsDownloadModalOpen(false);
+        setDownloadFileName('');
+        setSelectedDate('');
+        break;
+    }
+  };
+
+  const handleClearHistoryModalKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const uniqueDates = getUniqueDates();
+    const totalItems = uniqueDates.length > 1 ? 3 : 2; // clear downloaded, clear all (if multiple dates), no
+    
+    switch (e.code) {
+      case 'ArrowUp':
+      case 'KeyW':
+        e.preventDefault();
+        setClearHistoryModalFocusIndex((prev) => Math.max(0, prev - 1));
+        break;
+      case 'ArrowDown':
+      case 'KeyS':
+        e.preventDefault();
+        setClearHistoryModalFocusIndex((prev) => Math.min(totalItems - 1, prev + 1));
+        break;
+      case 'Space':
+      case 'Enter':
+        e.preventDefault();
+        if (clearHistoryModalFocusIndex === 0) {
+          handleClearHistoryConfirm('downloaded');
+        } else if (clearHistoryModalFocusIndex === 1 && uniqueDates.length > 1) {
+          handleClearHistoryConfirm('all');
+        } else if ((clearHistoryModalFocusIndex === 1 && uniqueDates.length === 1) || (clearHistoryModalFocusIndex === 2 && uniqueDates.length > 1)) {
+          // No button - position depends on whether "Clear All" is shown
+          setIsClearHistoryModalOpen(false);
+          setLastDownloadedDate('');
+        }
+        break;
+      case 'Tab':
+        e.preventDefault();
+        setIsClearHistoryModalOpen(false);
+        setLastDownloadedDate('');
+        break;
+    }
+  };
+
+  const handleConfirmModalKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    switch (e.code) {
+      case 'ArrowLeft':
+      case 'KeyA':
+        e.preventDefault();
+        setConfirmModalFocusIndex(0);
+        break;
+      case 'ArrowRight':
+      case 'KeyD':
+        e.preventDefault();
+        setConfirmModalFocusIndex(1);
+        break;
+      case 'Space':
+        e.preventDefault();
+        if (confirmModalFocusIndex === 0) {
+          // No button
+          setIsConfirmDeleteModalOpen(false);
+          setClearHistoryType(null);
+          setLastDownloadedDate('');
+        } else {
+          // Yes, Delete button
+          handleFinalDelete();
+        }
+        break;
+      case 'Enter':
+        e.preventDefault();
+        handleFinalDelete();
+        break;
+      case 'Tab':
+        e.preventDefault();
+        setIsConfirmDeleteModalOpen(false);
+        setClearHistoryType(null);
+        setLastDownloadedDate('');
+        break;
+    }
+  };
+
+  // Focus style helper
+  const getModalFocusStyle = (index: number, currentIndex: number) => ({
+    outline: index === currentIndex ? '2px solid #17A2B8' : '',
+    outlineOffset: '2px'
+  });
 
   return (
     <div className="bp6-dark" style={{ minHeight: '100vh', padding: '2rem' }}>
@@ -444,13 +642,24 @@ export default function App() {
         title="Download History"
         style={{ width: '400px' }}
       >
-        <div style={{ padding: '1rem' }}>
+        <div 
+          style={{ padding: '1rem', outline: 'none' }}
+          tabIndex={0}
+          onKeyDown={handleDownloadModalKeyDown}
+          ref={(el) => {
+            if (el && isDownloadModalOpen) {
+              el.focus();
+            }
+          }}
+        >
           <FormGroup label="File Name" labelFor="filename-input">
             <InputGroup
               id="filename-input"
               placeholder="Enter filename (without .csv extension)"
               value={downloadFileName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDownloadFileName(e.target.value)}
+              onClick={() => setDownloadModalFocusIndex(0)}
+              style={getModalFocusStyle(0, downloadModalFocusIndex)}
             />
           </FormGroup>
 
@@ -459,9 +668,14 @@ export default function App() {
               id="date-select"
               value={selectedDate}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedDate(e.target.value)}
+              onClick={() => setDownloadModalFocusIndex(1)}
+              style={{ ...getModalFocusStyle(1, downloadModalFocusIndex), width: '100%' }}
               fill
             >
               <option value="">Select a date...</option>
+              {getUniqueDates().length > 1 && (
+                <option value="all">All Dates</option>
+              )}
               {getUniqueDates().map(date => (
                 <option key={date} value={date}>
                   {date}
@@ -478,24 +692,174 @@ export default function App() {
           }}>
             <Button
               onClick={() => {
+                setDownloadModalFocusIndex(2);
                 setIsDownloadModalOpen(false);
                 setDownloadFileName('');
                 setSelectedDate('');
               }}
+              style={getModalFocusStyle(2, downloadModalFocusIndex)}
             >
               Cancel
             </Button>
             <Button
               intent="primary"
-              onClick={downloadCSV}
+              onClick={() => {
+                setDownloadModalFocusIndex(3);
+                if (downloadFileName.trim() && selectedDate) {
+                  downloadCSV();
+                }
+              }}
               disabled={!downloadFileName.trim() || !selectedDate}
               style={{
                 backgroundColor: '#17A2B8',
                 color: 'white',
-                border: 'none'
+                border: 'none',
+                ...getModalFocusStyle(3, downloadModalFocusIndex)
               }}
             >
               Download
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Clear History Modal */}
+      <Dialog
+        isOpen={isClearHistoryModalOpen}
+        onClose={() => {
+          setIsClearHistoryModalOpen(false);
+          setLastDownloadedDate('');
+        }}
+        title="Clear History"
+        style={{ width: '400px' }}
+      >
+        <div 
+          style={{ padding: '1rem', outline: 'none' }}
+          tabIndex={0}
+          onKeyDown={handleClearHistoryModalKeyDown}
+          ref={(el) => {
+            if (el && isClearHistoryModalOpen) {
+              el.focus();
+            }
+          }}
+        >
+          <p style={{ marginBottom: '1.5rem' }}>
+            Would you like to clear history?
+          </p>
+          
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '0.5rem',
+            marginBottom: '2rem'
+          }}>
+            <Button
+              onClick={() => {
+                setClearHistoryModalFocusIndex(0);
+                handleClearHistoryConfirm('downloaded');
+              }}
+              style={{ 
+                textAlign: 'left',
+                ...getModalFocusStyle(0, clearHistoryModalFocusIndex)
+              }}
+            >
+              Clear Downloaded History
+              {lastDownloadedDate === 'all' ? ' (All Dates)' : ` (${lastDownloadedDate})`}
+            </Button>
+            {getUniqueDates().length > 1 && (
+              <Button
+                onClick={() => {
+                  setClearHistoryModalFocusIndex(1);
+                  handleClearHistoryConfirm('all');
+                }}
+                style={{ 
+                  textAlign: 'left',
+                  ...getModalFocusStyle(1, clearHistoryModalFocusIndex)
+                }}
+              >
+                Clear All History
+              </Button>
+            )}
+            <Button
+              intent="primary"
+              onClick={() => {
+                const buttonIndex = getUniqueDates().length > 1 ? 2 : 1;
+                setClearHistoryModalFocusIndex(buttonIndex);
+                setIsClearHistoryModalOpen(false);
+                setLastDownloadedDate('');
+              }}
+              style={{
+                backgroundColor: '#17A2B8',
+                color: 'white',
+                border: 'none',
+                textAlign: 'left',
+                ...getModalFocusStyle(getUniqueDates().length > 1 ? 2 : 1, clearHistoryModalFocusIndex)
+              }}
+            >
+              No (Keep History)
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Confirmation Delete Modal */}
+      <Dialog
+        isOpen={isConfirmDeleteModalOpen}
+        onClose={() => {
+          setIsConfirmDeleteModalOpen(false);
+          setClearHistoryType(null);
+          setLastDownloadedDate('');
+        }}
+        title="Confirm Delete"
+        style={{ width: '400px' }}
+      >
+        <div 
+          style={{ padding: '1rem', outline: 'none' }}
+          tabIndex={0}
+          onKeyDown={handleConfirmModalKeyDown}
+          ref={(el) => {
+            if (el && isConfirmDeleteModalOpen) {
+              el.focus();
+            }
+          }}
+        >
+          <p style={{ marginBottom: '1.5rem' }}>
+            Are you sure you want to delete {' '}
+            {clearHistoryType === 'all' 
+              ? 'all history' 
+              : clearHistoryType === 'downloaded' && lastDownloadedDate === 'all'
+                ? 'all history'
+                : `history from ${lastDownloadedDate}`
+            }?
+            <br /><br />
+            <strong>This action cannot be undone.</strong>
+          </p>
+          
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'flex-end', 
+            gap: '0.5rem' 
+          }}>
+            <Button
+              onClick={() => {
+                setConfirmModalFocusIndex(0);
+                setIsConfirmDeleteModalOpen(false);
+                setClearHistoryType(null);
+                setLastDownloadedDate('');
+              }}
+              style={getModalFocusStyle(0, confirmModalFocusIndex)}
+            >
+              No
+            </Button>
+            <Button
+              intent="danger"
+              onClick={() => {
+                setConfirmModalFocusIndex(1);
+                handleFinalDelete();
+              }}
+              style={getModalFocusStyle(1, confirmModalFocusIndex)}
+            >
+              Yes, Delete
             </Button>
           </div>
         </div>
