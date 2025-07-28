@@ -3,9 +3,9 @@
 import type { Difficulty, Grade } from './types';
 
 export const TIME_OPTIONS = [
-  '19 – 30 sec',
-  '38 sec – 1 min 1 sec', 
-  '57 sec – 1 min 32 sec',
+  '19 – 30s',
+  '31s – 1m 1s', 
+  '57s – 1m 32s',
 ] as const;
 
 export const GRADE_TAGS: Record<Grade, string[]> = {
@@ -33,7 +33,7 @@ export const DIFFICULTY_TAGS: Record<Difficulty, string[]> = {
     'double grab/pinch',
     'dropped corner',
     'multiple tries for one motion',
-    'more than 6 sec from grab to pre-fold layout',
+    'more than 6s from grab to pre-fold layout',
   ],
   Easy: ['all motions logical and efficient'],
 };
