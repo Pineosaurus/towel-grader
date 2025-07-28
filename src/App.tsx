@@ -5,7 +5,7 @@ import {
   Tag,
 } from '@blueprintjs/core';
 
-import type { Difficulty, Grade } from './types';
+import type { Difficulty, Grade, HistoryEntry, GradingEntry, CountEntry } from './types';
 
 import { InitialStep } from './components/InitialStep';
 import { TagsStep } from './components/TagsStep';
@@ -30,11 +30,52 @@ export default function App() {
   const [gradeSelections, setGradeSelections] = useState<Record<string, boolean>>({});
   const [difficultySelections, setDifficultySelections] = useState<Record<string, boolean>>({});
 
-  const [history, setHistory] = useState<{ grade: Grade; difficulty: Difficulty; timestamp: Date }[]>(
-    []
-  );
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [firstEntryTime, setFirstEntryTime] = useState<Date | null>(null);
+  const [lastIntervalCheck, setLastIntervalCheck] = useState<Date | null>(null);
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
+  const addGradingEntry = (grade: Grade, difficulty: Difficulty) => {
+    const now = new Date();
+    
+    setHistory((prevHistory) => {
+      const newGradingEntry: GradingEntry = {
+        type: 'grading',
+        grade,
+        difficulty,
+        timestamp: now
+      };
+
+      // If this is the first entry, set the first entry time
+      if (!firstEntryTime) {
+        setFirstEntryTime(now);
+        setLastIntervalCheck(now);
+        return [newGradingEntry];
+      }
+
+      // Check if we need to add a 30-minute interval count entry
+      const timeSinceLastCheck = lastIntervalCheck ? now.getTime() - lastIntervalCheck.getTime() : 0;
+      const thirtyMinutesInMs = 30 * 60 * 1000;
+
+      let updatedHistory = [...prevHistory, newGradingEntry];
+
+      if (timeSinceLastCheck >= thirtyMinutesInMs) {
+        // Count total grading entries (not count entries)
+        const gradingEntries = updatedHistory.filter(entry => entry.type === 'grading');
+        const countEntry: CountEntry = {
+          type: 'count',
+          count: gradingEntries.length,
+          timestamp: now
+        };
+        
+        updatedHistory.push(countEntry);
+        setLastIntervalCheck(now);
+      }
+
+      return updatedHistory;
+    });
+  };
 
   const resetAll = () => {
     setStep(0);
@@ -57,7 +98,7 @@ export default function App() {
       // Invalid combinations get automatic C grade and skip to results
       setResultGrade('C');
       setResultDifficulty('Easy');
-      setHistory((h) => [...h, { grade: 'C', difficulty: 'Easy', timestamp: new Date() }]);
+      addGradingEntry('C', 'Easy');
       setStep(3);
     }
   };
@@ -68,7 +109,7 @@ export default function App() {
     if (grade === 'C') {
       // C grade skips difficulty step and goes straight to results
       setResultDifficulty('Easy');
-      setHistory((h) => [...h, { grade, difficulty: 'Easy', timestamp: new Date() }]);
+      addGradingEntry(grade, 'Easy');
       setStep(3);
     } else {
       // A and B grades proceed to difficulty step
@@ -79,7 +120,7 @@ export default function App() {
   const handleDifficultyComplete = (difficulty: Difficulty, selections: Record<string, boolean>) => {
     setResultDifficulty(difficulty);
     setDifficultySelections(selections);
-    setHistory((h) => [...h, { grade: resultGrade, difficulty, timestamp: new Date() }]);
+    addGradingEntry(resultGrade, difficulty);
     setStep(3);
   };
 
@@ -153,7 +194,7 @@ export default function App() {
             fontSize: '14px',
             color: '#666'
           }}>
-            Total entries: {history.length}
+            Total entries: {history.filter(entry => entry.type === 'grading').length}
           </div>
           {history.length === 0 ? (
             <p>No history yet.</p>
@@ -165,33 +206,63 @@ export default function App() {
                 alignItems: 'center',
                 justifyContent: 'space-between'
               }}>
-                <div>
-                  <Tag intent={gradeTagColors[entry.grade]} style={{ marginRight: '0.5rem' }}>
-                    {entry.grade}
-                  </Tag>
-                  {entry.grade !== 'C' && (
-                    <Tag
-                      intent={entry.difficulty === 'Hard' ? undefined : 'primary'}
-                      style={{
-                        backgroundColor: entry.difficulty === 'Hard' ? '#8B5CF6' : undefined,
-                        color: entry.difficulty === 'Hard' ? 'white' : undefined
-                      }}
-                    >
-                      {entry.difficulty}
-                    </Tag>
-                  )}
-                </div>
-                <span style={{ 
-                  fontSize: '12px', 
-                  color: '#888',
-                  marginLeft: '1rem'
-                }}>
-                  {entry.timestamp.toLocaleTimeString([], { 
-                    hour: '2-digit', 
-                    minute: '2-digit',
-                    second: '2-digit'
-                  })}
-                </span>
+                {entry.type === 'grading' ? (
+                  <>
+                    <div>
+                      <Tag intent={gradeTagColors[entry.grade]} style={{ marginRight: '0.5rem' }}>
+                        {entry.grade}
+                      </Tag>
+                      {entry.grade !== 'C' && (
+                        <Tag
+                          intent={entry.difficulty === 'Hard' ? undefined : 'primary'}
+                          style={{
+                            backgroundColor: entry.difficulty === 'Hard' ? '#8B5CF6' : undefined,
+                            color: entry.difficulty === 'Hard' ? 'white' : undefined
+                          }}
+                        >
+                          {entry.difficulty}
+                        </Tag>
+                      )}
+                    </div>
+                    <span style={{ 
+                      fontSize: '12px', 
+                      color: '#888',
+                      marginLeft: '1rem'
+                    }}>
+                      {entry.timestamp.toLocaleTimeString([], { 
+                        hour: '2-digit', 
+                        minute: '2-digit',
+                        second: '2-digit'
+                      })}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <Tag 
+                        intent="none" 
+                        style={{ 
+                          backgroundColor: '#444', 
+                          color: '#fff',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        COUNT: {entry.count}
+                      </Tag>
+                    </div>
+                    <span style={{ 
+                      fontSize: '12px', 
+                      color: '#888',
+                      marginLeft: '1rem'
+                    }}>
+                      {entry.timestamp.toLocaleTimeString([], { 
+                        hour: '2-digit', 
+                        minute: '2-digit',
+                        second: '2-digit'
+                      })}
+                    </span>
+                  </>
+                )}
               </div>
             ))
           )}
