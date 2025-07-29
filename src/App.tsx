@@ -83,63 +83,6 @@ export default function App() {
     setNextIntervalTime(saved.nextIntervalTime);
   }, []);
 
-  // Background timer to generate cumulative counts every 30 minutes
-  useEffect(() => {
-    const generateIntervalCounts = () => {
-      if (!firstEntryTime) return;
-      
-      const now = new Date();
-      
-      // Only generate counts if we're on the same day as the first entry
-      if (!isSameDay(firstEntryTime, now)) return;
-      
-      // Get current minutes and determine if we're at a 30-minute mark
-      const currentMinutes = now.getMinutes();
-      const currentSeconds = now.getSeconds();
-      
-      // Only generate counts at exactly :00:00 or :30:00
-      if ((currentMinutes === 0 || currentMinutes === 30) && currentSeconds === 0) {
-        console.log('Generating count at exact interval:', now.toLocaleTimeString());
-        
-        setHistory((prevHistory) => {
-          // Check if we already have a count entry for this exact time
-          const existingCount = prevHistory.find(entry => 
-            entry.type === 'count' && 
-            entry.timestamp.getTime() === now.getTime()
-          );
-          
-          if (existingCount) {
-            console.log('Count already exists for this time');
-            return prevHistory;
-          }
-          
-          // Count all grading entries for today
-          const todayGradingCount = prevHistory.filter(entry => 
-            entry.type === 'grading' && 
-            isSameDay(entry.timestamp, now)
-          ).length;
-          
-          const countEntry: CountEntry = {
-            type: 'count',
-            count: todayGradingCount,
-            timestamp: new Date(now)
-          };
-          
-          const updatedHistory = [...prevHistory, countEntry];
-          saveToLocalStorage(updatedHistory, firstEntryTime, nextIntervalTime);
-          
-          console.log('Generated count entry:', todayGradingCount, 'at', now.toLocaleTimeString());
-          return updatedHistory;
-        });
-      }
-    };
-
-    // Check every second to catch the exact :00 and :30 moments
-    const interval = setInterval(generateIntervalCounts, 1000);
-
-    return () => clearInterval(interval);
-  }, [firstEntryTime, nextIntervalTime]);
-
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [downloadFileName, setDownloadFileName] = useState('');
@@ -256,20 +199,52 @@ export default function App() {
       };
 
       let updatedFirstTime = firstEntryTime;
+      let updatedNextInterval = nextIntervalTime;
 
       // If this is the first entry of the day or no entries exist, initialize
       if (!updatedFirstTime || !isSameDay(updatedFirstTime, now)) {
         updatedFirstTime = now;
+        updatedNextInterval = getNextHalfHourMark(now);
         setFirstEntryTime(updatedFirstTime);
+        setNextIntervalTime(updatedNextInterval);
         const newHistory = [newGradingEntry];
-        saveToLocalStorage(newHistory, updatedFirstTime, nextIntervalTime);
+        saveToLocalStorage(newHistory, updatedFirstTime, updatedNextInterval);
         return newHistory;
       }
 
-      const updatedHistory = [...prevHistory, newGradingEntry];
-      
-      // The background timer will handle count generation at exact intervals
-      saveToLocalStorage(updatedHistory, updatedFirstTime, nextIntervalTime);
+      let updatedHistory = [...prevHistory, newGradingEntry];
+
+      // Check if we've passed any 30-minute intervals and need to add count entries
+      if (updatedNextInterval && now >= updatedNextInterval) {
+        // Add count entries for all missed intervals
+        let currentInterval = new Date(updatedNextInterval);
+        
+        while (currentInterval <= now) {
+          // Count grading entries for the current day up to this interval
+          const dayCount = getGradingCountForDay(updatedHistory, currentInterval);
+          
+          const countEntry: CountEntry = {
+            type: 'count',
+            count: dayCount,
+            timestamp: new Date(currentInterval)
+          };
+          
+          updatedHistory.push(countEntry);
+          
+          // Move to next 30-minute interval
+          if (currentInterval.getMinutes() === 0) {
+            currentInterval.setMinutes(30);
+          } else {
+            currentInterval.setHours(currentInterval.getHours() + 1, 0, 0, 0);
+          }
+        }
+        
+        // Update next interval time
+        updatedNextInterval = new Date(currentInterval);
+        setNextIntervalTime(updatedNextInterval);
+      }
+
+      saveToLocalStorage(updatedHistory, updatedFirstTime, updatedNextInterval);
       return updatedHistory;
     });
   };
