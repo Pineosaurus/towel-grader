@@ -37,25 +37,23 @@ export default function App() {
 
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [firstEntryTime, setFirstEntryTime] = useState<Date | null>(null);
-  const [nextIntervalTime, setNextIntervalTime] = useState<Date | null>(null);
 
   // localStorage functions
-  const saveToLocalStorage = (history: HistoryEntry[], firstTime: Date | null, nextInterval: Date | null) => {
+  const saveToLocalStorage = (history: HistoryEntry[], firstTime: Date | null) => {
     try {
       localStorage.setItem('towel-grader-history', JSON.stringify({
         history: history.map(entry => ({
           ...entry,
           timestamp: entry.timestamp.toISOString()
         })),
-        firstEntryTime: firstTime?.toISOString() || null,
-        nextIntervalTime: nextInterval?.toISOString() || null
+        firstEntryTime: firstTime?.toISOString() || null
       }));
     } catch (error) {
       console.warn('Failed to save to localStorage:', error);
     }
   };
 
-  const loadFromLocalStorage = (): { history: HistoryEntry[], firstEntryTime: Date | null, nextIntervalTime: Date | null } => {
+  const loadFromLocalStorage = (): { history: HistoryEntry[], firstEntryTime: Date | null } => {
     try {
       const saved = localStorage.getItem('towel-grader-history');
       if (saved) {
@@ -65,14 +63,13 @@ export default function App() {
             ...entry,
             timestamp: new Date(entry.timestamp)
           })),
-          firstEntryTime: parsed.firstEntryTime ? new Date(parsed.firstEntryTime) : null,
-          nextIntervalTime: parsed.nextIntervalTime ? new Date(parsed.nextIntervalTime) : null
+          firstEntryTime: parsed.firstEntryTime ? new Date(parsed.firstEntryTime) : null
         };
       }
     } catch (error) {
       console.warn('Failed to load from localStorage:', error);
     }
-    return { history: [], firstEntryTime: null, nextIntervalTime: null };
+    return { history: [], firstEntryTime: null };
   };
 
   // Load saved data on initialization
@@ -80,7 +77,6 @@ export default function App() {
     const saved = loadFromLocalStorage();
     setHistory(saved.history);
     setFirstEntryTime(saved.firstEntryTime);
-    setNextIntervalTime(saved.nextIntervalTime);
   }, []);
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -199,52 +195,18 @@ export default function App() {
       };
 
       let updatedFirstTime = firstEntryTime;
-      let updatedNextInterval = nextIntervalTime;
 
       // If this is the first entry of the day or no entries exist, initialize
       if (!updatedFirstTime || !isSameDay(updatedFirstTime, now)) {
         updatedFirstTime = now;
-        updatedNextInterval = getNextHalfHourMark(now);
         setFirstEntryTime(updatedFirstTime);
-        setNextIntervalTime(updatedNextInterval);
         const newHistory = [newGradingEntry];
-        saveToLocalStorage(newHistory, updatedFirstTime, updatedNextInterval);
+        saveToLocalStorage(newHistory, updatedFirstTime);
         return newHistory;
       }
 
-      let updatedHistory = [...prevHistory, newGradingEntry];
-
-      // Check if we've passed any 30-minute intervals and need to add count entries
-      if (updatedNextInterval && now >= updatedNextInterval) {
-        // Add count entries for all missed intervals
-        let currentInterval = new Date(updatedNextInterval);
-        
-        while (currentInterval <= now) {
-          // Count grading entries for the current day up to this interval
-          const dayCount = getGradingCountForDay(updatedHistory, currentInterval);
-          
-          const countEntry: CountEntry = {
-            type: 'count',
-            count: dayCount,
-            timestamp: new Date(currentInterval)
-          };
-          
-          updatedHistory.push(countEntry);
-          
-          // Move to next 30-minute interval
-          if (currentInterval.getMinutes() === 0) {
-            currentInterval.setMinutes(30);
-          } else {
-            currentInterval.setHours(currentInterval.getHours() + 1, 0, 0, 0);
-          }
-        }
-        
-        // Update next interval time
-        updatedNextInterval = new Date(currentInterval);
-        setNextIntervalTime(updatedNextInterval);
-      }
-
-      saveToLocalStorage(updatedHistory, updatedFirstTime, updatedNextInterval);
+      const updatedHistory = [...prevHistory, newGradingEntry];
+      saveToLocalStorage(updatedHistory, updatedFirstTime);
       return updatedHistory;
     });
   };
@@ -329,6 +291,60 @@ export default function App() {
   };
 
   const generateCSV = (entries: HistoryEntry[], isAllDates: boolean = false): string => {
+    // Generate 30-minute interval counts for the data
+    const generateIntervalCounts = (entries: HistoryEntry[]): HistoryEntry[] => {
+      if (entries.length === 0) return entries;
+      
+      // Only process grading entries for interval calculation
+      const gradingEntries = entries.filter(e => e.type === 'grading');
+      if (gradingEntries.length === 0) return entries;
+      
+      // Find the first entry to determine when to start counting
+      const firstEntry = gradingEntries[0];
+      const firstEntryDate = firstEntry.timestamp;
+      
+      // Get the next 30-minute mark after first entry
+      let currentInterval = getNextHalfHourMark(firstEntryDate);
+      const result: HistoryEntry[] = [...entries];
+      
+      // Find the last entry time to know when to stop
+      const lastEntry = gradingEntries[gradingEntries.length - 1];
+      const endTime = new Date();
+      const actualEndTime = endTime > lastEntry.timestamp ? endTime : lastEntry.timestamp;
+      
+      // Generate counts for all 30-minute intervals (only after first entry)
+      while (currentInterval <= actualEndTime) {
+        // Only generate count if this interval is after the first entry
+        if (currentInterval > firstEntryDate) {
+          // Count grading entries up to this interval time that are on the same day
+          const countUpToInterval = gradingEntries.filter(entry => 
+            entry.timestamp <= currentInterval &&
+            isSameDay(entry.timestamp, firstEntryDate)
+          ).length;
+        
+          const countEntry: CountEntry = {
+            type: 'count',
+            count: countUpToInterval,
+            timestamp: new Date(currentInterval)
+          };
+          
+          result.push(countEntry);
+        }
+        
+        // Move to next 30-minute interval
+        if (currentInterval.getMinutes() === 0) {
+          currentInterval.setMinutes(30);
+        } else {
+          currentInterval.setHours(currentInterval.getHours() + 1, 0, 0, 0);
+        }
+      }
+      
+      // Sort all entries by timestamp
+      return result.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    };
+    
+    // Generate entries with interval counts
+    const entriesWithCounts = generateIntervalCounts(entries);
     const headers = [
       'Type',
       'Final Grade', 
@@ -409,7 +425,7 @@ export default function App() {
       return matchingTags.join('; ');
     };
 
-    entries.forEach(entry => {
+    entriesWithCounts.forEach(entry => {
       const date = entry.timestamp.toLocaleDateString();
       const time = entry.timestamp.toLocaleTimeString([], { 
         hour: '2-digit', 
@@ -421,13 +437,13 @@ export default function App() {
         const aTags = getTagsByGrade(entry.selectedGradeTags, 'A');
         const bTags = getTagsByGrade(entry.selectedGradeTags, 'B');
         const cTags = getTagsByGrade(entry.selectedGradeTags, 'C');
-        const easyTags = getTagsByDifficulty(entry.selectedDifficultyTags, 'Easy');
-        const hardTags = getTagsByDifficulty(entry.selectedDifficultyTags, 'Hard');
+        const easyTags = entry.grade === 'C' ? '' : getTagsByDifficulty(entry.selectedDifficultyTags, 'Easy');
+        const hardTags = entry.grade === 'C' ? '' : getTagsByDifficulty(entry.selectedDifficultyTags, 'Hard');
 
         csvRows.push([
           'Grading',
           entry.grade,
-          entry.difficulty,
+          entry.grade === 'C' ? '' : entry.difficulty, // No difficulty for C grades
           escapeCSV(aTags),
           escapeCSV(bTags),
           escapeCSV(cTags),
@@ -454,7 +470,7 @@ export default function App() {
       }
     });
 
-    // Add total count
+    // Add total count (only original entries, not generated counts)
     const gradingCount = entries.filter(e => e.type === 'grading').length;
     if (gradingCount > 0) {
       const totalLabel = isAllDates ? 'Total (All Dates)' : 'Total';
@@ -521,8 +537,7 @@ export default function App() {
     if (lastDownloadedDate === 'all') {
       setHistory([]);
       setFirstEntryTime(null);
-      setNextIntervalTime(null);
-      saveToLocalStorage([], null, null);
+      saveToLocalStorage([], null);
     } else {
       const remainingEntries = history.filter(entry => 
         entry.timestamp.toLocaleDateString() !== lastDownloadedDate
@@ -532,17 +547,14 @@ export default function App() {
       // Update timing if no entries remain
       if (remainingEntries.length === 0) {
         setFirstEntryTime(null);
-        setNextIntervalTime(null);
-        saveToLocalStorage([], null, null);
+        saveToLocalStorage([], null);
       } else {
         // Find new first entry time if needed
         const gradingEntries = remainingEntries.filter(e => e.type === 'grading');
         if (gradingEntries.length > 0) {
           const newFirstTime = gradingEntries[0].timestamp;
-          const newNextInterval = getNextHalfHourMark(newFirstTime);
           setFirstEntryTime(newFirstTime);
-          setNextIntervalTime(newNextInterval);
-          saveToLocalStorage(remainingEntries, newFirstTime, newNextInterval);
+          saveToLocalStorage(remainingEntries, newFirstTime);
         }
       }
     }
@@ -551,8 +563,7 @@ export default function App() {
   const clearAllHistory = () => {
     setHistory([]);
     setFirstEntryTime(null);
-    setNextIntervalTime(null);
-    saveToLocalStorage([], null, null);
+    saveToLocalStorage([], null);
   };
 
   const handleClearHistoryConfirm = (type: 'downloaded' | 'all') => {
@@ -771,188 +782,159 @@ export default function App() {
             fontSize: '14px',
             color: '#666'
           }}>
-            Total entries: {history.filter(entry => entry.type === 'grading').length}
+            Total entries: {history.length}
           </div>
           {history.length === 0 ? (
             <p>No history yet.</p>
           ) : (
-            history.map((entry, idx) => (
+            history.map((entry, idx) => {
+              const gradingEntry = entry as GradingEntry;
+              return (
               <div key={idx} style={{ 
                 margin: '0.5rem 0',
                 border: '1px solid #333',
                 borderRadius: '4px',
                 padding: '0.5rem'
               }}>
-                {entry.type === 'grading' ? (
-                  <>
-                    <div style={{ 
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer'
-                    }}
-                    onClick={() => toggleHistoryItemExpansion(idx)}
-                    >
-                      <div>
-                        <Tag intent={gradeTagColors[entry.grade]} style={{ marginRight: '0.5rem' }}>
-                          {entry.grade}
-                        </Tag>
-                        {entry.grade !== 'C' && (
-                          <Tag
-                            intent={entry.difficulty === 'Hard' ? undefined : 'primary'}
-                            style={{
-                              backgroundColor: entry.difficulty === 'Hard' ? '#8B5CF6' : undefined,
-                              color: entry.difficulty === 'Hard' ? 'white' : undefined,
-                              marginRight: '0.5rem'
-                            }}
-                          >
-                            {entry.difficulty}
-                          </Tag>
-                        )}
-                        <span style={{ fontSize: '12px', color: '#aaa' }}>
-                          {expandedHistoryItems.has(idx) ? '▼' : '▶'} Click to {expandedHistoryItems.has(idx) ? 'hide' : 'show'} tags
-                        </span>
-                      </div>
-                      <span style={{ 
-                        fontSize: '12px', 
-                        color: '#888',
-                        marginLeft: '1rem'
-                      }}>
-                        {entry.timestamp.toLocaleDateString()} {entry.timestamp.toLocaleTimeString([], { 
-                          hour: '2-digit', 
-                          minute: '2-digit',
-                          second: '2-digit'
-                        })}
-                      </span>
-                    </div>
-                    {expandedHistoryItems.has(idx) && (
-                      <div style={{ 
-                        marginTop: '0.5rem',
-                        paddingTop: '0.5rem',
-                        borderTop: '1px solid #444',
-                        fontSize: '12px'
-                      }}>
-                        {entry.selectedGradeTags && entry.selectedGradeTags.length > 0 && (
-                          <div style={{ marginBottom: '0.25rem' }}>
-                            <strong style={{ color: '#ccc' }}>Grade Tags:</strong>
-                            <div style={{ marginTop: '0.25rem' }}>
-                              {entry.selectedGradeTags.map((tag, tagIdx) => {
-                                console.log('Rendering grade tag:', tag);
-                                let bgColor = '#888'; // default gray
-                                
-                                // Hard-code the colors for each specific tag
-                                if (tag.includes('zero or one minor cosmetic')) bgColor = '#0F9960'; // A - green
-                                else if (tag.includes('rolled edge')) bgColor = '#D9822B'; // B - orange
-                                else if (tag.includes('unfolded or flipped')) bgColor = '#D9822B'; // B - orange
-                                else if (tag.includes('misaligned edge')) bgColor = '#D9822B'; // B - orange
-                                else if (tag.includes('partial unfold')) bgColor = '#D9822B'; // B - orange
-                                else if (tag.includes('other cosmetic')) bgColor = '#D9822B'; // B - orange
-                                else if (tag.includes('inaccurate placement')) bgColor = '#D9822B'; // B - orange
-                                else if (tag.includes('failure to fold')) bgColor = '#DB3737'; // C - red
-                                else if (tag.includes('chaotic or uncertain')) bgColor = '#DB3737'; // C - red
-                                else if (tag.includes('inefficient path')) bgColor = '#DB3737'; // C - red
-                                else if (tag.includes('complicated in-hand')) bgColor = '#DB3737'; // C - red
-                                else if (tag.includes('hand holding towel')) bgColor = '#DB3737'; // C - red
-                                
-                                return (
-                                  <span key={tagIdx} style={{ 
-                                    display: 'inline-block',
-                                    marginRight: '0.25rem', 
-                                    marginBottom: '0.25rem',
-                                    fontSize: '11px',
-                                    backgroundColor: bgColor,
-                                    color: 'white',
-                                    fontWeight: 'bold',
-                                    padding: '2px 6px',
-                                    borderRadius: '3px',
-                                    border: 'none'
-                                  }}>
-                                    {tag}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                        {entry.selectedDifficultyTags && entry.selectedDifficultyTags.length > 0 && (
-                          <div>
-                            <strong style={{ color: '#ccc' }}>Difficulty Tags:</strong>
-                            <div style={{ marginTop: '0.25rem' }}>
-                              {entry.selectedDifficultyTags.map((tag, tagIdx) => {
-                                console.log('Rendering difficulty tag:', tag);
-                                let bgColor = '#888'; // default gray
-                                
-                                // Hard-code the colors for each specific tag
-                                if (tag.includes('messy initial')) bgColor = '#8B5CF6'; // Hard - purple
-                                else if (tag.includes('double grab')) bgColor = '#8B5CF6'; // Hard - purple
-                                else if (tag.includes('dropped corner')) bgColor = '#8B5CF6'; // Hard - purple
-                                else if (tag.includes('multiple tries')) bgColor = '#8B5CF6'; // Hard - purple
-                                else if (tag.includes('more than 6s')) bgColor = '#8B5CF6'; // Hard - purple
-                                else if (tag.includes('pushed aside')) bgColor = '#8B5CF6'; // Hard - purple
-                                else if (tag.includes('all motions logical')) bgColor = '#137CBD'; // Easy - blue
-                                
-                                return (
-                                  <span key={tagIdx} style={{ 
-                                    display: 'inline-block',
-                                    marginRight: '0.25rem', 
-                                    marginBottom: '0.25rem',
-                                    fontSize: '11px',
-                                    backgroundColor: bgColor,
-                                    color: 'white',
-                                    fontWeight: 'bold',
-                                    padding: '2px 6px',
-                                    borderRadius: '3px',
-                                    border: 'none'
-                                  }}>
-                                    {tag}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                        {(!entry.selectedGradeTags || entry.selectedGradeTags.length === 0) && 
-                         (!entry.selectedDifficultyTags || entry.selectedDifficultyTags.length === 0) && (
-                          <div style={{ color: '#888', fontStyle: 'italic' }}>
-                            No tags available (older entry)
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
-                ) : (
+                <>
                   <div style={{ 
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}>
+                    justifyContent: 'space-between',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => toggleHistoryItemExpansion(idx)}
+                  >
                     <div>
-                      <Tag 
-                        intent="none" 
-                        style={{ 
-                          backgroundColor: '#444', 
-                          color: '#fff',
-                          fontWeight: 'bold'
-                        }}
-                      >
-                        COUNT: {entry.count}
+                      <Tag intent={gradeTagColors[gradingEntry.grade]} style={{ marginRight: '0.5rem' }}>
+                        {gradingEntry.grade}
                       </Tag>
+                      {gradingEntry.grade !== 'C' && (
+                        <Tag
+                          intent={gradingEntry.difficulty === 'Hard' ? undefined : 'primary'}
+                          style={{
+                            backgroundColor: gradingEntry.difficulty === 'Hard' ? '#8B5CF6' : undefined,
+                            color: gradingEntry.difficulty === 'Hard' ? 'white' : undefined,
+                            marginRight: '0.5rem'
+                          }}
+                        >
+                          {gradingEntry.difficulty}
+                        </Tag>
+                      )}
+                      <span style={{ fontSize: '12px', color: '#aaa' }}>
+                        {expandedHistoryItems.has(idx) ? '▼' : '▶'} Click to {expandedHistoryItems.has(idx) ? 'hide' : 'show'} tags
+                      </span>
                     </div>
                     <span style={{ 
                       fontSize: '12px', 
                       color: '#888',
                       marginLeft: '1rem'
                     }}>
-                      {entry.timestamp.toLocaleDateString()} {entry.timestamp.toLocaleTimeString([], { 
+                      {gradingEntry.timestamp.toLocaleDateString()} {gradingEntry.timestamp.toLocaleTimeString([], { 
                         hour: '2-digit', 
                         minute: '2-digit',
                         second: '2-digit'
                       })}
                     </span>
                   </div>
-                )}
+                  {expandedHistoryItems.has(idx) && (
+                    <div style={{ 
+                      marginTop: '0.5rem',
+                      paddingTop: '0.5rem',
+                      borderTop: '1px solid #444',
+                      fontSize: '12px'
+                    }}>
+                      {gradingEntry.selectedGradeTags && gradingEntry.selectedGradeTags.length > 0 && (
+                        <div style={{ marginBottom: '0.25rem' }}>
+                          <strong style={{ color: '#ccc' }}>Grade Tags:</strong>
+                          <div style={{ marginTop: '0.25rem' }}>
+                            {gradingEntry.selectedGradeTags.map((tag: string, tagIdx: number) => {
+                              console.log('Rendering grade tag:', tag);
+                              let bgColor = '#888'; // default gray
+                              
+                              // Hard-code the colors for each specific tag
+                              if (tag.includes('zero or one minor cosmetic')) bgColor = '#0F9960'; // A - green
+                              else if (tag.includes('rolled edge')) bgColor = '#D9822B'; // B - orange
+                              else if (tag.includes('unfolded or flipped')) bgColor = '#D9822B'; // B - orange
+                              else if (tag.includes('misaligned edge')) bgColor = '#D9822B'; // B - orange
+                              else if (tag.includes('partial unfold')) bgColor = '#D9822B'; // B - orange
+                              else if (tag.includes('other cosmetic')) bgColor = '#D9822B'; // B - orange
+                              else if (tag.includes('inaccurate placement')) bgColor = '#D9822B'; // B - orange
+                              else if (tag.includes('failure to fold')) bgColor = '#DB3737'; // C - red
+                              else if (tag.includes('chaotic or uncertain')) bgColor = '#DB3737'; // C - red
+                              else if (tag.includes('inefficient path')) bgColor = '#DB3737'; // C - red
+                              else if (tag.includes('complicated in-hand')) bgColor = '#DB3737'; // C - red
+                              else if (tag.includes('hand holding towel')) bgColor = '#DB3737'; // C - red
+                              
+                              return (
+                                <span key={tagIdx} style={{ 
+                                  display: 'inline-block',
+                                  marginRight: '0.25rem', 
+                                  marginBottom: '0.25rem',
+                                  fontSize: '11px',
+                                  backgroundColor: bgColor,
+                                  color: 'white',
+                                  fontWeight: 'bold',
+                                  padding: '2px 6px',
+                                  borderRadius: '3px',
+                                  border: 'none'
+                                }}>
+                                  {tag}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {gradingEntry.selectedDifficultyTags && gradingEntry.selectedDifficultyTags.length > 0 && (
+                        <div>
+                          <strong style={{ color: '#ccc' }}>Difficulty Tags:</strong>
+                          <div style={{ marginTop: '0.25rem' }}>
+                            {gradingEntry.selectedDifficultyTags.map((tag: string, tagIdx: number) => {
+                              console.log('Rendering difficulty tag:', tag);
+                              let bgColor = '#888'; // default gray
+                              
+                              // Hard-code the colors for each specific tag
+                              if (tag.includes('messy initial')) bgColor = '#8B5CF6'; // Hard - purple
+                              else if (tag.includes('double grab')) bgColor = '#8B5CF6'; // Hard - purple
+                              else if (tag.includes('dropped corner')) bgColor = '#8B5CF6'; // Hard - purple
+                              else if (tag.includes('multiple tries')) bgColor = '#8B5CF6'; // Hard - purple
+                              else if (tag.includes('more than 6s')) bgColor = '#8B5CF6'; // Hard - purple
+                              else if (tag.includes('pushed aside')) bgColor = '#8B5CF6'; // Hard - purple
+                              else if (tag.includes('all motions logical')) bgColor = '#137CBD'; // Easy - blue
+                              
+                              return (
+                                <span key={tagIdx} style={{ 
+                                  display: 'inline-block',
+                                  marginRight: '0.25rem', 
+                                  marginBottom: '0.25rem',
+                                  fontSize: '11px',
+                                  backgroundColor: bgColor,
+                                  color: 'white',
+                                  fontWeight: 'bold',
+                                  padding: '2px 6px',
+                                  borderRadius: '3px',
+                                  border: 'none'
+                                }}>
+                                  {tag}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {(!gradingEntry.selectedGradeTags || gradingEntry.selectedGradeTags.length === 0) && 
+                       (!gradingEntry.selectedDifficultyTags || gradingEntry.selectedDifficultyTags.length === 0) && (
+                        <div style={{ color: '#888', fontStyle: 'italic' }}>
+                          No tags available (older entry)
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       </Drawer>
