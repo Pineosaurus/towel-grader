@@ -37,10 +37,10 @@ export default function App() {
 
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [firstEntryTime, setFirstEntryTime] = useState<Date | null>(null);
-  const [lastIntervalCheck, setLastIntervalCheck] = useState<Date | null>(null);
+  const [nextIntervalTime, setNextIntervalTime] = useState<Date | null>(null);
 
   // localStorage functions
-  const saveToLocalStorage = (history: HistoryEntry[], firstTime: Date | null, lastCheck: Date | null) => {
+  const saveToLocalStorage = (history: HistoryEntry[], firstTime: Date | null, nextInterval: Date | null) => {
     try {
       localStorage.setItem('towel-grader-history', JSON.stringify({
         history: history.map(entry => ({
@@ -48,14 +48,14 @@ export default function App() {
           timestamp: entry.timestamp.toISOString()
         })),
         firstEntryTime: firstTime?.toISOString() || null,
-        lastIntervalCheck: lastCheck?.toISOString() || null
+        nextIntervalTime: nextInterval?.toISOString() || null
       }));
     } catch (error) {
       console.warn('Failed to save to localStorage:', error);
     }
   };
 
-  const loadFromLocalStorage = (): { history: HistoryEntry[], firstEntryTime: Date | null, lastIntervalCheck: Date | null } => {
+  const loadFromLocalStorage = (): { history: HistoryEntry[], firstEntryTime: Date | null, nextIntervalTime: Date | null } => {
     try {
       const saved = localStorage.getItem('towel-grader-history');
       if (saved) {
@@ -66,13 +66,13 @@ export default function App() {
             timestamp: new Date(entry.timestamp)
           })),
           firstEntryTime: parsed.firstEntryTime ? new Date(parsed.firstEntryTime) : null,
-          lastIntervalCheck: parsed.lastIntervalCheck ? new Date(parsed.lastIntervalCheck) : null
+          nextIntervalTime: parsed.nextIntervalTime ? new Date(parsed.nextIntervalTime) : null
         };
       }
     } catch (error) {
       console.warn('Failed to load from localStorage:', error);
     }
-    return { history: [], firstEntryTime: null, lastIntervalCheck: null };
+    return { history: [], firstEntryTime: null, nextIntervalTime: null };
   };
 
   // Load saved data on initialization
@@ -80,7 +80,7 @@ export default function App() {
     const saved = loadFromLocalStorage();
     setHistory(saved.history);
     setFirstEntryTime(saved.firstEntryTime);
-    setLastIntervalCheck(saved.lastIntervalCheck);
+    setNextIntervalTime(saved.nextIntervalTime);
   }, []);
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -95,6 +95,35 @@ export default function App() {
   const [clearHistoryModalFocusIndex, setClearHistoryModalFocusIndex] = useState(2); // Default to "No"
   const [confirmModalFocusIndex, setConfirmModalFocusIndex] = useState(0);
   const [expandedHistoryItems, setExpandedHistoryItems] = useState<Set<number>>(new Set());
+
+  // Helper function to get the next 30-minute interval
+  const getNextHalfHourMark = (date: Date): Date => {
+    const nextMark = new Date(date);
+    const minutes = nextMark.getMinutes();
+    const seconds = nextMark.getSeconds();
+    const milliseconds = nextMark.getMilliseconds();
+    
+    if (minutes < 30) {
+      nextMark.setMinutes(30, 0, 0);
+    } else {
+      nextMark.setHours(nextMark.getHours() + 1, 0, 0, 0);
+    }
+    
+    return nextMark;
+  };
+
+  // Helper function to check if it's a new day
+  const isSameDay = (date1: Date, date2: Date): boolean => {
+    return date1.toDateString() === date2.toDateString();
+  };
+
+  // Helper function to count grading entries for current day
+  const getGradingCountForDay = (history: HistoryEntry[], targetDate: Date): number => {
+    return history.filter(entry => 
+      entry.type === 'grading' && 
+      isSameDay(entry.timestamp, targetDate)
+    ).length;
+  };
 
   // Direct tag color mapping
   const getGradeTagColor = (tag: string): string => {
@@ -170,40 +199,52 @@ export default function App() {
       };
 
       let updatedFirstTime = firstEntryTime;
-      let updatedLastCheck = lastIntervalCheck;
+      let updatedNextInterval = nextIntervalTime;
 
-      // If this is the first entry, set the first entry time
-      if (!firstEntryTime) {
+      // If this is the first entry of the day or no entries exist, initialize
+      if (!updatedFirstTime || !isSameDay(updatedFirstTime, now)) {
         updatedFirstTime = now;
-        updatedLastCheck = now;
-        setFirstEntryTime(now);
-        setLastIntervalCheck(now);
+        updatedNextInterval = getNextHalfHourMark(now);
+        setFirstEntryTime(updatedFirstTime);
+        setNextIntervalTime(updatedNextInterval);
         const newHistory = [newGradingEntry];
-        saveToLocalStorage(newHistory, updatedFirstTime, updatedLastCheck);
+        saveToLocalStorage(newHistory, updatedFirstTime, updatedNextInterval);
         return newHistory;
       }
 
-      // Check if we need to add a 30-minute interval count entry
-      const timeSinceLastCheck = lastIntervalCheck ? now.getTime() - lastIntervalCheck.getTime() : 0;
-      const thirtyMinutesInMs = 30 * 60 * 1000;
-
       let updatedHistory = [...prevHistory, newGradingEntry];
 
-      if (timeSinceLastCheck >= thirtyMinutesInMs) {
-        // Count total grading entries (not count entries)
-        const gradingEntries = updatedHistory.filter(entry => entry.type === 'grading');
-        const countEntry: CountEntry = {
-          type: 'count',
-          count: gradingEntries.length,
-          timestamp: now
-        };
+      // Check if we've passed any 30-minute intervals and need to add count entries
+      if (updatedNextInterval && now >= updatedNextInterval) {
+        // Add count entries for all missed intervals
+        let currentInterval = new Date(updatedNextInterval);
         
-        updatedHistory.push(countEntry);
-        updatedLastCheck = now;
-        setLastIntervalCheck(now);
+        while (currentInterval <= now) {
+          // Count grading entries for the current day up to this interval
+          const dayCount = getGradingCountForDay(updatedHistory, currentInterval);
+          
+          const countEntry: CountEntry = {
+            type: 'count',
+            count: dayCount,
+            timestamp: new Date(currentInterval)
+          };
+          
+          updatedHistory.push(countEntry);
+          
+          // Move to next 30-minute interval
+          if (currentInterval.getMinutes() === 0) {
+            currentInterval.setMinutes(30);
+          } else {
+            currentInterval.setHours(currentInterval.getHours() + 1, 0, 0, 0);
+          }
+        }
+        
+        // Update next interval time
+        updatedNextInterval = new Date(currentInterval);
+        setNextIntervalTime(updatedNextInterval);
       }
 
-      saveToLocalStorage(updatedHistory, updatedFirstTime, updatedLastCheck);
+      saveToLocalStorage(updatedHistory, updatedFirstTime, updatedNextInterval);
       return updatedHistory;
     });
   };
@@ -288,8 +329,85 @@ export default function App() {
   };
 
   const generateCSV = (entries: HistoryEntry[], isAllDates: boolean = false): string => {
-    const headers = ['Type', 'Grade', 'Difficulty', 'Date', 'Time', 'Count'];
+    const headers = [
+      'Type',
+      'Final Grade', 
+      'Final Difficulty', 
+      'A Tags Selected', 
+      'B Tags Selected', 
+      'C Tags Selected', 
+      'Easy Tags Selected', 
+      'Hard Tags Selected', 
+      'Date', 
+      'Time', 
+      'Cumulative Count'
+    ];
     const csvRows = [headers.join(',')];
+
+    // Helper function to escape CSV values that contain commas
+    const escapeCSV = (value: string): string => {
+      if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
+    };
+
+    // Helper function to get tags by grade
+    const getTagsByGrade = (tags: string[] | undefined, targetGrade: 'A' | 'B' | 'C'): string => {
+      if (!tags || tags.length === 0) return '';
+      
+      const matchingTags = tags.filter(tag => {
+        // A-grade tags
+        if (targetGrade === 'A' && tag.includes('zero or one minor cosmetic')) return true;
+        
+        // B-grade tags  
+        if (targetGrade === 'B' && (
+          tag.includes('rolled edge') ||
+          tag.includes('unfolded or flipped') ||
+          tag.includes('misaligned edge') ||
+          tag.includes('partial unfold') ||
+          tag.includes('other cosmetic') ||
+          tag.includes('inaccurate placement')
+        )) return true;
+        
+        // C-grade tags
+        if (targetGrade === 'C' && (
+          tag.includes('failure to fold') ||
+          tag.includes('chaotic or uncertain') ||
+          tag.includes('inefficient path') ||
+          tag.includes('complicated in-hand') ||
+          tag.includes('hand holding towel')
+        )) return true;
+        
+        return false;
+      });
+      
+      return matchingTags.join('; ');
+    };
+
+    // Helper function to get tags by difficulty
+    const getTagsByDifficulty = (tags: string[] | undefined, targetDifficulty: 'Easy' | 'Hard'): string => {
+      if (!tags || tags.length === 0) return '';
+      
+      const matchingTags = tags.filter(tag => {
+        // Hard difficulty tags
+        if (targetDifficulty === 'Hard' && (
+          tag.includes('messy initial') ||
+          tag.includes('double grab') ||
+          tag.includes('dropped corner') ||
+          tag.includes('multiple tries') ||
+          tag.includes('more than 6s') ||
+          tag.includes('pushed aside')
+        )) return true;
+        
+        // Easy difficulty tags
+        if (targetDifficulty === 'Easy' && tag.includes('all motions logical')) return true;
+        
+        return false;
+      });
+      
+      return matchingTags.join('; ');
+    };
 
     entries.forEach(entry => {
       const date = entry.timestamp.toLocaleDateString();
@@ -300,10 +418,21 @@ export default function App() {
       });
 
       if (entry.type === 'grading') {
+        const aTags = getTagsByGrade(entry.selectedGradeTags, 'A');
+        const bTags = getTagsByGrade(entry.selectedGradeTags, 'B');
+        const cTags = getTagsByGrade(entry.selectedGradeTags, 'C');
+        const easyTags = getTagsByDifficulty(entry.selectedDifficultyTags, 'Easy');
+        const hardTags = getTagsByDifficulty(entry.selectedDifficultyTags, 'Hard');
+
         csvRows.push([
           'Grading',
           entry.grade,
           entry.difficulty,
+          escapeCSV(aTags),
+          escapeCSV(bTags),
+          escapeCSV(cTags),
+          escapeCSV(easyTags),
+          escapeCSV(hardTags),
           date,
           time,
           ''
@@ -311,6 +440,11 @@ export default function App() {
       } else {
         csvRows.push([
           'Count',
+          '',
+          '',
+          '',
+          '',
+          '',
           '',
           '',
           date,
@@ -324,7 +458,19 @@ export default function App() {
     const gradingCount = entries.filter(e => e.type === 'grading').length;
     if (gradingCount > 0) {
       const totalLabel = isAllDates ? 'Total (All Dates)' : 'Total';
-      csvRows.push([totalLabel, '', '', '', '', gradingCount.toString()].join(','));
+      csvRows.push([
+        totalLabel, 
+        '', 
+        '', 
+        '', 
+        '', 
+        '', 
+        '', 
+        '', 
+        '', 
+        '', 
+        gradingCount.toString()
+      ].join(','));
     }
 
     return csvRows.join('\n');
@@ -375,7 +521,7 @@ export default function App() {
     if (lastDownloadedDate === 'all') {
       setHistory([]);
       setFirstEntryTime(null);
-      setLastIntervalCheck(null);
+      setNextIntervalTime(null);
       saveToLocalStorage([], null, null);
     } else {
       const remainingEntries = history.filter(entry => 
@@ -386,15 +532,17 @@ export default function App() {
       // Update timing if no entries remain
       if (remainingEntries.length === 0) {
         setFirstEntryTime(null);
-        setLastIntervalCheck(null);
+        setNextIntervalTime(null);
         saveToLocalStorage([], null, null);
       } else {
         // Find new first entry time if needed
         const gradingEntries = remainingEntries.filter(e => e.type === 'grading');
         if (gradingEntries.length > 0) {
           const newFirstTime = gradingEntries[0].timestamp;
+          const newNextInterval = getNextHalfHourMark(newFirstTime);
           setFirstEntryTime(newFirstTime);
-          saveToLocalStorage(remainingEntries, newFirstTime, lastIntervalCheck);
+          setNextIntervalTime(newNextInterval);
+          saveToLocalStorage(remainingEntries, newFirstTime, newNextInterval);
         }
       }
     }
@@ -403,7 +551,7 @@ export default function App() {
   const clearAllHistory = () => {
     setHistory([]);
     setFirstEntryTime(null);
-    setLastIntervalCheck(null);
+    setNextIntervalTime(null);
     saveToLocalStorage([], null, null);
   };
 
