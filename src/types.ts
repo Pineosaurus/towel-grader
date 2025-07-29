@@ -9,6 +9,8 @@ export interface GradingEntry {
   grade: Grade;
   difficulty: Difficulty;
   timestamp: Date;
+  selectedGradeTags?: string[];
+  selectedDifficultyTags?: string[];
 }
 
 export interface CountEntry {

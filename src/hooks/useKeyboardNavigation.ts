@@ -130,8 +130,37 @@ export const useKeyboardNavigation = (options: UseKeyboardNavigationOptions = {}
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent default for navigation keys
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'Enter', 'Tab'].includes(e.code)) {
+      // If the event originated from an editable element (e.g. an <input>,
+      // <textarea> or a content-editable region) we should **not** hijack the
+      // keystroke.  This allows users to freely type characters such as
+      // “w”, “a”, “s” and “d”, which we otherwise treat as navigation keys.
+      const target = e.target as HTMLElement | null;
+      const isEditable = target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        (target as HTMLElement).isContentEditable
+      );
+
+      if (isEditable) {
+        return; // Let the input element handle the key press normally
+      }
+
+      // Prevent default for navigation keys when not typing in an input field
+      if (
+        [
+          'ArrowUp',
+          'ArrowDown',
+          'ArrowLeft',
+          'ArrowRight',
+          'KeyW',
+          'KeyA',
+          'KeyS',
+          'KeyD',
+          'Space',
+          'Enter',
+          'Tab',
+        ].includes(e.code)
+      ) {
         e.preventDefault();
       }
 

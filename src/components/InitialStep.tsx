@@ -143,7 +143,7 @@ export const InitialStep: FC<Props> = ({
 
         <H2>How long was the episode?</H2>
         <ButtonGroup minimal large>
-          {TIME_OPTIONS.map((label, idx) => (
+          {TIME_OPTIONS.slice(0, 3).map((label, idx) => (
             <Button
               key={label}
               intent={timeIdx === idx ? 'primary' : 'none'}
@@ -157,6 +157,27 @@ export const InitialStep: FC<Props> = ({
             </Button>
           ))}
         </ButtonGroup>
+        <div style={{ marginTop: '0.5rem' }}>
+          <Button
+            key={TIME_OPTIONS[3]}
+            intent={timeIdx === 3 ? 'primary' : 'none'}
+            onClick={() => {
+              setTimeIdx(3);
+              setFocusedIndex(6);
+            }}
+            style={{
+              ...getFocusStyle(6),
+              backgroundColor: 'transparent',
+              color: timeIdx === 3 ? undefined : '#888',
+              border: 'none',
+              boxShadow: 'none'
+            }}
+            minimal
+            large
+          >
+            {TIME_OPTIONS[3]}
+          </Button>
+        </div>
 
         <Divider style={{ margin: '1rem 0' }} />
 

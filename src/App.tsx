@@ -10,6 +10,7 @@ import {
 } from '@blueprintjs/core';
 
 import type { Difficulty, Grade, HistoryEntry, GradingEntry, CountEntry } from './types';
+import { GRADE_TAGS, DIFFICULTY_TAGS } from './constants';
 
 import { InitialStep } from './components/InitialStep';
 import { TagsStep } from './components/TagsStep';
@@ -93,8 +94,69 @@ export default function App() {
   const [downloadModalFocusIndex, setDownloadModalFocusIndex] = useState(0);
   const [clearHistoryModalFocusIndex, setClearHistoryModalFocusIndex] = useState(2); // Default to "No"
   const [confirmModalFocusIndex, setConfirmModalFocusIndex] = useState(0);
+  const [expandedHistoryItems, setExpandedHistoryItems] = useState<Set<number>>(new Set());
 
-  const addGradingEntry = (grade: Grade, difficulty: Difficulty) => {
+  // Direct tag color mapping
+  const getGradeTagColor = (tag: string): string => {
+    // A-grade tags (green)
+    if (tag === 'zero or one minor cosmetic flaw in final fold') {
+      return '#0F9960';
+    }
+    
+    // B-grade tags (orange)
+    if (tag === 'rolled edge' || 
+        tag === 'unfolded or flipped corner' || 
+        tag === 'misaligned edge (> 1 inch)' || 
+        tag === 'partial unfold during place' || 
+        tag === 'other cosmetic issue in final fold' || 
+        tag === 'inaccurate placement') {
+      return '#D9822B';
+    }
+    
+    // C-grade tags (red)
+    if (tag === 'failure to fold or place' || 
+        tag === 'chaotic or uncertain movements' || 
+        tag === 'inefficient path to fold' || 
+        tag === 'complicated in-hand manipulation' || 
+        tag === 'hand holding towel out of view') {
+      return '#DB3737';
+    }
+    
+    return '#888'; // fallback gray
+  };
+
+  const getDifficultyTagColor = (tag: string): string => {
+    // Hard difficulty tags (purple)
+    if (tag === 'messy initial grab' || 
+        tag === 'double grab/pinch' || 
+        tag === 'dropped corner' || 
+        tag === 'multiple tries for one motion' || 
+        tag === 'more than 6s from grab to pre-fold layout' || 
+        tag === 'pushed aside extra towels') {
+      return '#8B5CF6';
+    }
+    
+    // Easy difficulty tags (blue)
+    if (tag === 'all motions logical and efficient') {
+      return '#137CBD';
+    }
+    
+    return '#888'; // fallback gray
+  };
+
+  const toggleHistoryItemExpansion = (index: number) => {
+    setExpandedHistoryItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
+
+  const addGradingEntry = (grade: Grade, difficulty: Difficulty, selectedGradeTags?: string[], selectedDifficultyTags?: string[]) => {
     const now = new Date();
     
     setHistory((prevHistory) => {
@@ -102,7 +164,9 @@ export default function App() {
         type: 'grading',
         grade,
         difficulty,
-        timestamp: now
+        timestamp: now,
+        selectedGradeTags,
+        selectedDifficultyTags
       };
 
       let updatedFirstTime = firstEntryTime;
@@ -165,7 +229,7 @@ export default function App() {
       // Invalid combinations get automatic C grade and skip to results
       setResultGrade('C');
       setResultDifficulty('Easy');
-      addGradingEntry('C', 'Easy');
+      addGradingEntry('C', 'Easy', [], []);
       setStep(3);
     }
   };
@@ -176,7 +240,8 @@ export default function App() {
     if (grade === 'C') {
       // C grade skips difficulty step and goes straight to results
       setResultDifficulty('Easy');
-      addGradingEntry(grade, 'Easy');
+      const selectedTags = Object.keys(selections).filter(key => selections[key]);
+      addGradingEntry(grade, 'Easy', selectedTags, []);
       setStep(3);
     } else {
       // A and B grades proceed to difficulty step
@@ -187,7 +252,9 @@ export default function App() {
   const handleDifficultyComplete = (difficulty: Difficulty, selections: Record<string, boolean>) => {
     setResultDifficulty(difficulty);
     setDifficultySelections(selections);
-    addGradingEntry(resultGrade, difficulty);
+    const selectedGradeTags = Object.keys(gradeSelections).filter(key => gradeSelections[key]);
+    const selectedDifficultyTags = Object.keys(selections).filter(key => selections[key]);
+    addGradingEntry(resultGrade, difficulty, selectedGradeTags, selectedDifficultyTags);
     setStep(3);
   };
 
@@ -361,16 +428,20 @@ export default function App() {
 
   // Keyboard handlers for modals
   const handleDownloadModalKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // If the user is currently typing in an input field, don't intercept any keys
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.isContentEditable) {
+      return; // Let the input handle the keystroke normally
+    }
+
     const totalItems = 4; // filename, date, cancel, download
     
     switch (e.code) {
       case 'ArrowUp':
-      case 'KeyW':
         e.preventDefault();
         setDownloadModalFocusIndex((prev) => Math.max(0, prev - 1));
         break;
       case 'ArrowDown':
-      case 'KeyS':
         e.preventDefault();
         setDownloadModalFocusIndex((prev) => Math.min(totalItems - 1, prev + 1));
         break;
@@ -409,12 +480,10 @@ export default function App() {
     
     switch (e.code) {
       case 'ArrowUp':
-      case 'KeyW':
         e.preventDefault();
         setClearHistoryModalFocusIndex((prev) => Math.max(0, prev - 1));
         break;
       case 'ArrowDown':
-      case 'KeyS':
         e.preventDefault();
         setClearHistoryModalFocusIndex((prev) => Math.min(totalItems - 1, prev + 1));
         break;
@@ -442,12 +511,10 @@ export default function App() {
   const handleConfirmModalKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     switch (e.code) {
       case 'ArrowLeft':
-      case 'KeyA':
         e.preventDefault();
         setConfirmModalFocusIndex(0);
         break;
       case 'ArrowRight':
-      case 'KeyD':
         e.preventDefault();
         setConfirmModalFocusIndex(1);
         break;
@@ -564,42 +631,153 @@ export default function App() {
             history.map((entry, idx) => (
               <div key={idx} style={{ 
                 margin: '0.5rem 0',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
+                border: '1px solid #333',
+                borderRadius: '4px',
+                padding: '0.5rem'
               }}>
                 {entry.type === 'grading' ? (
                   <>
-                    <div>
-                      <Tag intent={gradeTagColors[entry.grade]} style={{ marginRight: '0.5rem' }}>
-                        {entry.grade}
-                      </Tag>
-                      {entry.grade !== 'C' && (
-                        <Tag
-                          intent={entry.difficulty === 'Hard' ? undefined : 'primary'}
-                          style={{
-                            backgroundColor: entry.difficulty === 'Hard' ? '#8B5CF6' : undefined,
-                            color: entry.difficulty === 'Hard' ? 'white' : undefined
-                          }}
-                        >
-                          {entry.difficulty}
+                    <div style={{ 
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => toggleHistoryItemExpansion(idx)}
+                    >
+                      <div>
+                        <Tag intent={gradeTagColors[entry.grade]} style={{ marginRight: '0.5rem' }}>
+                          {entry.grade}
                         </Tag>
-                      )}
+                        {entry.grade !== 'C' && (
+                          <Tag
+                            intent={entry.difficulty === 'Hard' ? undefined : 'primary'}
+                            style={{
+                              backgroundColor: entry.difficulty === 'Hard' ? '#8B5CF6' : undefined,
+                              color: entry.difficulty === 'Hard' ? 'white' : undefined,
+                              marginRight: '0.5rem'
+                            }}
+                          >
+                            {entry.difficulty}
+                          </Tag>
+                        )}
+                        <span style={{ fontSize: '12px', color: '#aaa' }}>
+                          {expandedHistoryItems.has(idx) ? '▼' : '▶'} Click to {expandedHistoryItems.has(idx) ? 'hide' : 'show'} tags
+                        </span>
+                      </div>
+                      <span style={{ 
+                        fontSize: '12px', 
+                        color: '#888',
+                        marginLeft: '1rem'
+                      }}>
+                        {entry.timestamp.toLocaleDateString()} {entry.timestamp.toLocaleTimeString([], { 
+                          hour: '2-digit', 
+                          minute: '2-digit',
+                          second: '2-digit'
+                        })}
+                      </span>
                     </div>
-                    <span style={{ 
-                      fontSize: '12px', 
-                      color: '#888',
-                      marginLeft: '1rem'
-                    }}>
-                      {entry.timestamp.toLocaleDateString()} {entry.timestamp.toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit',
-                        second: '2-digit'
-                      })}
-                    </span>
+                    {expandedHistoryItems.has(idx) && (
+                      <div style={{ 
+                        marginTop: '0.5rem',
+                        paddingTop: '0.5rem',
+                        borderTop: '1px solid #444',
+                        fontSize: '12px'
+                      }}>
+                        {entry.selectedGradeTags && entry.selectedGradeTags.length > 0 && (
+                          <div style={{ marginBottom: '0.25rem' }}>
+                            <strong style={{ color: '#ccc' }}>Grade Tags:</strong>
+                            <div style={{ marginTop: '0.25rem' }}>
+                              {entry.selectedGradeTags.map((tag, tagIdx) => {
+                                console.log('Rendering grade tag:', tag);
+                                let bgColor = '#888'; // default gray
+                                
+                                // Hard-code the colors for each specific tag
+                                if (tag.includes('zero or one minor cosmetic')) bgColor = '#0F9960'; // A - green
+                                else if (tag.includes('rolled edge')) bgColor = '#D9822B'; // B - orange
+                                else if (tag.includes('unfolded or flipped')) bgColor = '#D9822B'; // B - orange
+                                else if (tag.includes('misaligned edge')) bgColor = '#D9822B'; // B - orange
+                                else if (tag.includes('partial unfold')) bgColor = '#D9822B'; // B - orange
+                                else if (tag.includes('other cosmetic')) bgColor = '#D9822B'; // B - orange
+                                else if (tag.includes('inaccurate placement')) bgColor = '#D9822B'; // B - orange
+                                else if (tag.includes('failure to fold')) bgColor = '#DB3737'; // C - red
+                                else if (tag.includes('chaotic or uncertain')) bgColor = '#DB3737'; // C - red
+                                else if (tag.includes('inefficient path')) bgColor = '#DB3737'; // C - red
+                                else if (tag.includes('complicated in-hand')) bgColor = '#DB3737'; // C - red
+                                else if (tag.includes('hand holding towel')) bgColor = '#DB3737'; // C - red
+                                
+                                return (
+                                  <span key={tagIdx} style={{ 
+                                    display: 'inline-block',
+                                    marginRight: '0.25rem', 
+                                    marginBottom: '0.25rem',
+                                    fontSize: '11px',
+                                    backgroundColor: bgColor,
+                                    color: 'white',
+                                    fontWeight: 'bold',
+                                    padding: '2px 6px',
+                                    borderRadius: '3px',
+                                    border: 'none'
+                                  }}>
+                                    {tag}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {entry.selectedDifficultyTags && entry.selectedDifficultyTags.length > 0 && (
+                          <div>
+                            <strong style={{ color: '#ccc' }}>Difficulty Tags:</strong>
+                            <div style={{ marginTop: '0.25rem' }}>
+                              {entry.selectedDifficultyTags.map((tag, tagIdx) => {
+                                console.log('Rendering difficulty tag:', tag);
+                                let bgColor = '#888'; // default gray
+                                
+                                // Hard-code the colors for each specific tag
+                                if (tag.includes('messy initial')) bgColor = '#8B5CF6'; // Hard - purple
+                                else if (tag.includes('double grab')) bgColor = '#8B5CF6'; // Hard - purple
+                                else if (tag.includes('dropped corner')) bgColor = '#8B5CF6'; // Hard - purple
+                                else if (tag.includes('multiple tries')) bgColor = '#8B5CF6'; // Hard - purple
+                                else if (tag.includes('more than 6s')) bgColor = '#8B5CF6'; // Hard - purple
+                                else if (tag.includes('pushed aside')) bgColor = '#8B5CF6'; // Hard - purple
+                                else if (tag.includes('all motions logical')) bgColor = '#137CBD'; // Easy - blue
+                                
+                                return (
+                                  <span key={tagIdx} style={{ 
+                                    display: 'inline-block',
+                                    marginRight: '0.25rem', 
+                                    marginBottom: '0.25rem',
+                                    fontSize: '11px',
+                                    backgroundColor: bgColor,
+                                    color: 'white',
+                                    fontWeight: 'bold',
+                                    padding: '2px 6px',
+                                    borderRadius: '3px',
+                                    border: 'none'
+                                  }}>
+                                    {tag}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {(!entry.selectedGradeTags || entry.selectedGradeTags.length === 0) && 
+                         (!entry.selectedDifficultyTags || entry.selectedDifficultyTags.length === 0) && (
+                          <div style={{ color: '#888', fontStyle: 'italic' }}>
+                            No tags available (older entry)
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </>
                 ) : (
-                  <>
+                  <div style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
                     <div>
                       <Tag 
                         intent="none" 
@@ -623,7 +801,7 @@ export default function App() {
                         second: '2-digit'
                       })}
                     </span>
-                  </>
+                  </div>
                 )}
               </div>
             ))
@@ -644,13 +822,7 @@ export default function App() {
       >
         <div 
           style={{ padding: '1rem', outline: 'none' }}
-          tabIndex={0}
           onKeyDown={handleDownloadModalKeyDown}
-          ref={(el) => {
-            if (el && isDownloadModalOpen) {
-              el.focus();
-            }
-          }}
         >
           <FormGroup label="File Name" labelFor="filename-input">
             <InputGroup
@@ -659,6 +831,7 @@ export default function App() {
               value={downloadFileName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDownloadFileName(e.target.value)}
               onClick={() => setDownloadModalFocusIndex(0)}
+              onKeyDown={(e: React.KeyboardEvent) => e.stopPropagation()}
               style={getModalFocusStyle(0, downloadModalFocusIndex)}
             />
           </FormGroup>
@@ -669,6 +842,7 @@ export default function App() {
               value={selectedDate}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedDate(e.target.value)}
               onClick={() => setDownloadModalFocusIndex(1)}
+              onKeyDown={(e: React.KeyboardEvent) => e.stopPropagation()}
               style={{ ...getModalFocusStyle(1, downloadModalFocusIndex), width: '100%' }}
               fill
             >

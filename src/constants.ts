@@ -35,6 +35,7 @@ export const DIFFICULTY_TAGS: Record<Difficulty, string[]> = {
     'dropped corner',
     'multiple tries for one motion',
     'more than 6s from grab to pre-fold layout',
+    'pushed aside extra towels',
   ],
   Easy: ['all motions logical and efficient'],
 };
